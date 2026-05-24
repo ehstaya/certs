@@ -97,23 +97,32 @@ public class ReportsController {
 
     /** Verifier-feedback report. Lists every vote with a reason; admin can
      *  retire a question or send it back to the review queue from each row.
-     *  Supports filtering by exam and by specific voter (verifier). */
+     *  Supports filtering by exam, voter (verifier), and reason text. */
     @GetMapping("/verifier-feedback")
     public String verifierFeedback(@RequestParam(name = "exam", required = false) String exam,
                                    @RequestParam(name = "voter", required = false) String voter,
+                                   @RequestParam(name = "reason", required = false) String reason,
                                    Model model) {
         List<ExamDto> exams = examService.listActive();
         List<VoteService.VerifierFeedbackEntry> rows = voteService.verifierFeedback(exam);
 
-        // Voter dropdown is built from ALL reasoned votes (regardless of the
-        // current exam filter) so admins can still switch voters after picking
-        // an exam. Counts on the dropdown also stay stable for the same reason.
+        // Dropdown sources are built from ALL reasoned votes (regardless of
+        // the current filters) so admins can still pivot to a different voter
+        // or reason after applying an exam filter. Counts on the voter
+        // dropdown also stay stable for the same reason.
         List<VoteService.FeedbackVoter> voters = voteService.feedbackVoters();
+        List<String> reasons = voteService.feedbackReasons();
 
-        final String voterFilter = (voter == null || voter.isBlank()) ? null : voter.trim();
+        final String voterFilter  = (voter == null  || voter.isBlank())  ? null : voter.trim();
+        final String reasonFilter = (reason == null || reason.isBlank()) ? null : reason.trim();
         if (voterFilter != null) {
             rows = rows.stream()
                     .filter(r -> voterFilter.equalsIgnoreCase(r.voterEmail()))
+                    .toList();
+        }
+        if (reasonFilter != null) {
+            rows = rows.stream()
+                    .filter(r -> r.reason() != null && reasonFilter.equalsIgnoreCase(r.reason().trim()))
                     .toList();
         }
 
@@ -129,6 +138,8 @@ public class ReportsController {
         model.addAttribute("exam", exam == null ? "" : exam);
         model.addAttribute("voters", voters);
         model.addAttribute("voter", voterFilter == null ? "" : voterFilter);
+        model.addAttribute("reasons", reasons);
+        model.addAttribute("reason", reasonFilter == null ? "" : reasonFilter);
         model.addAttribute("rows", rows);
         model.addAttribute("totals", new FeedbackTotals(up, down, rows.size(), distinctVoterEmails.size()));
         model.addAttribute("section", "verifier-feedback");

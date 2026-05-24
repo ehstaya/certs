@@ -30,6 +30,13 @@ public interface QuestionVoteRepository extends JpaRepository<QuestionVote, Long
            "ORDER BY v.votedAt DESC")
     List<QuestionVote> findVotesWithReasons(@Param("examSlug") String examSlug);
 
+    /** Distinct, non-blank reason strings across every reasoned vote.
+     *  Drives the reason-filter dropdown on the verifier-feedback report. */
+    @Query("SELECT DISTINCT TRIM(v.reason) FROM QuestionVote v " +
+           "WHERE v.reason IS NOT NULL AND LENGTH(TRIM(v.reason)) > 0 " +
+           "ORDER BY TRIM(v.reason) ASC")
+    List<String> distinctReasons();
+
     /** Aggregate by question for an entire exam, in one query. */
     @Query("SELECT v.question.id, SUM(CASE WHEN v.voteValue > 0 THEN 1 ELSE 0 END), " +
            "                      SUM(CASE WHEN v.voteValue < 0 THEN 1 ELSE 0 END) " +

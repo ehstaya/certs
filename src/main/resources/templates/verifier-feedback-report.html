@@ -97,7 +97,17 @@
                   th:text="|${vt.display()} (👍 ${vt.up} · 👎 ${vt.down})|">Voter</option>
         </select>
       </label>
-      <a class="reset-link" th:if="${exam != '' or voter != ''}" href="/admin/reports/verifier-feedback">Clear filters</a>
+      <label>
+        <span>Reason</span>
+        <select name="reason" onchange="this.form.submit()">
+          <option value="">— Any reason —</option>
+          <option th:each="rs : ${reasons}"
+                  th:value="${rs}"
+                  th:selected="${rs == reason}"
+                  th:text="${rs}">Reason</option>
+        </select>
+      </label>
+      <a class="reset-link" th:if="${exam != '' or voter != '' or reason != ''}" href="/admin/reports/verifier-feedback">Clear filters</a>
     </form>
 
     <!-- Totals reflect the currently filtered set (exam + voter). -->

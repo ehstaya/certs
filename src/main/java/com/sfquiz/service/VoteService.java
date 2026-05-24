@@ -132,6 +132,12 @@ public class VoteService {
         return out;
     }
 
+    /** Distinct non-blank reasons used across every reasoned vote, sorted
+     *  alphabetically — drives the reason dropdown on the feedback report. */
+    public List<String> feedbackReasons() {
+        return votes.distinctReasons();
+    }
+
     /** Distinct voters who have left at least one reasoned vote, with their
      *  up/down totals — drives the "filter by verifier" dropdown on the
      *  feedback report. Sorted by voter display name. */
