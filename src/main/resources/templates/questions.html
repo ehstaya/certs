@@ -34,6 +34,20 @@
       margin: 8px 0;
       font-size: .9rem;
     }
+    .q-nav-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0 18px 0;
+    }
+    .q-counts {
+      display: inline-flex;
+      gap: 16px;
+      font-size: .9rem;
+      color: var(--gray-700, #374151);
+      margin-bottom: 12px;
+    }
+    .q-counts strong { color: var(--gray-900, #111827); }
   </style>
 </head>
 <body>
@@ -73,74 +87,29 @@
     Questions imported by the crawler agents (<code>push</code>) land here as <strong>pending</strong>.
     They've already passed the agents' automated quality gate; review them, then <strong>approve</strong> (adds to the live quiz),
     <strong>reject</strong> (hides it), or <strong>edit</strong> first.
-    Approved: <span th:text="${approvedCount}">0</span> &nbsp;|&nbsp;
-    Pending: <span th:text="${pendingCount}">0</span> &nbsp;|&nbsp;
-    Retired: <span th:text="${retiredCount}">0</span>
-    &nbsp;·&nbsp; <a href="/admin/questions/approved">Browse / edit / retire approved →</a>
-    &nbsp;·&nbsp; <a href="/admin/questions/retired">Retired queue →</a>
   </p>
+
+  <div class="q-counts">
+    <span>Approved: <strong th:text="${approvedCount}">0</strong></span>
+    <span>Pending: <strong th:text="${pendingCount}">0</strong></span>
+    <span>Retired: <strong th:text="${retiredCount}">0</strong></span>
+  </div>
+
+  <div class="q-nav-bar">
+    <form method="get" action="/admin/questions/approved" style="display:inline">
+      <button class="btn btn-primary btn-sm" type="submit">Browse / edit / retire approved</button>
+    </form>
+    <form method="get" action="/admin/questions/retired" style="display:inline">
+      <button class="btn btn-sm" type="submit">Retired queue</button>
+    </form>
+    <form method="get" action="/admin/questions/maintenance" style="display:inline">
+      <button class="btn btn-sm" type="submit">Maintenance (classify / enrich)</button>
+    </form>
+  </div>
 
   <p class="muted" th:if="${param.approved}">Question approved — it's now in the live quiz.</p>
   <p class="muted" th:if="${param.rejected}">Question rejected.</p>
   <p class="muted" th:if="${param.updated}">Question updated.</p>
-  <p class="banner banner-ok" th:if="${classifyMessage}" th:text="${classifyMessage}">classify message</p>
-  <p class="banner banner-ok" th:if="${enrichMessage}" th:text="${enrichMessage}">enrich message</p>
-
-  <section class="admin-section">
-    <h2>Topic classification</h2>
-    <p class="muted">Assign each approved question to one of the official exam topics so session sampling matches the
-      real exam mix. Uses Claude Haiku (~$0.15 for 250 questions) and only touches untagged rows — safe to re-run.</p>
-    <form method="post" action="/admin/questions/classify-topics" style="display:inline; margin-right: 8px;">
-      <input type="hidden" name="examSlug" value="salesforce-admin" />
-      <button class="btn btn-primary btn-sm" type="submit"
-              onclick="return confirm('Classify every untagged Salesforce-Admin question via Claude Haiku? Bounded by the daily Anthropic budget.')">
-        Classify Salesforce-Admin topics
-      </button>
-    </form>
-    <form method="post" action="/admin/questions/classify-topics" style="display:inline; margin-right: 8px;">
-      <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
-      <button class="btn btn-sm" type="submit">Classify MCPA topics</button>
-    </form>
-    <form method="post" action="/admin/questions/classify-topics" style="display:inline; margin-right: 8px;">
-      <input type="hidden" name="examSlug" value="agentforce-specialist" />
-      <button class="btn btn-sm" type="submit">Classify Agentforce topics</button>
-    </form>
-    <form method="post" action="/admin/questions/classify-topics" style="display:inline;">
-      <input type="hidden" name="examSlug" value="data-cloud-consultant" />
-      <button class="btn btn-sm" type="submit">Classify Data-Cloud topics</button>
-    </form>
-  </section>
-
-  <section class="admin-section">
-    <h2>Explanation backfill</h2>
-    <p class="muted">For questions that landed without an explanation (e.g. uploaded screenshots that only showed
-      the prompt + choices), generate a 2–3 sentence explanation + a vendor doc link via Claude Haiku.
-      References point at the canonical site for each exam: <code>help.salesforce.com</code>,
-      <code>trailhead.salesforce.com</code>, <code>docs.mulesoft.com</code>, etc.
-      Only touches rows missing both — safe to re-run. Bounded by the daily Anthropic budget.</p>
-    <form method="post" action="/admin/questions/enrich-explanations" style="display:inline; margin-right: 8px;">
-      <input type="hidden" name="examSlug" value="salesforce-admin" />
-      <button class="btn btn-primary btn-sm" type="submit"
-              onclick="return confirm('Enrich missing Salesforce-Admin explanations from help.salesforce.com / Trailhead? Bounded by the daily Anthropic budget.')">
-        Enrich Salesforce-Admin
-      </button>
-    </form>
-    <form method="post" action="/admin/questions/enrich-explanations" style="display:inline; margin-right: 8px;">
-      <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
-      <button class="btn btn-sm" type="submit"
-              onclick="return confirm('Enrich MCPA explanations from docs.mulesoft.com? Bounded by the daily Anthropic budget.')">
-        Enrich MCPA
-      </button>
-    </form>
-    <form method="post" action="/admin/questions/enrich-explanations" style="display:inline; margin-right: 8px;">
-      <input type="hidden" name="examSlug" value="agentforce-specialist" />
-      <button class="btn btn-sm" type="submit">Enrich Agentforce</button>
-    </form>
-    <form method="post" action="/admin/questions/enrich-explanations" style="display:inline;">
-      <input type="hidden" name="examSlug" value="data-cloud-consultant" />
-      <button class="btn btn-sm" type="submit">Enrich Data-Cloud</button>
-    </form>
-  </section>
 
   <section class="admin-section">
     <h2>Pending <span class="count" th:text="'(' + ${pendingCount} + ')'">(0)</span></h2>

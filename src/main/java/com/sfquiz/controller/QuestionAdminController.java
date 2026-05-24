@@ -63,6 +63,14 @@ public class QuestionAdminController {
         );
     }
 
+    /** Maintenance page — separates the heavy admin-only operations
+     *  (topic classification, explanation backfill) from the day-to-day
+     *  question review queue so it stays focused. */
+    @GetMapping("/maintenance")
+    public String maintenance() {
+        return "question-maintenance";
+    }
+
     /** One-shot admin action: classify every untagged approved question for an
      *  exam (default salesforce-admin) using Claude Haiku. Idempotent — re-runs
      *  just skip already-tagged rows. Bounded by the daily Anthropic budget. */
@@ -71,7 +79,7 @@ public class QuestionAdminController {
                                  RedirectAttributes flash) {
         TopicClassifier.BatchResult result = topicClassifier.classifyUntaggedFor(examSlug);
         flash.addFlashAttribute("classifyMessage", result.message());
-        return "redirect:/admin/questions";
+        return "redirect:/admin/questions/maintenance";
     }
 
     /** One-shot admin action: backfill explanation + helpUrl for every approved
@@ -83,7 +91,7 @@ public class QuestionAdminController {
                                      RedirectAttributes flash) {
         com.sfquiz.service.ExplanationEnricher.BatchResult result = enricher.enrichExisting(examSlug);
         flash.addFlashAttribute("enrichMessage", result.message());
-        return "redirect:/admin/questions";
+        return "redirect:/admin/questions/maintenance";
     }
 
     @PostMapping("/{id}/approve")

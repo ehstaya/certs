@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Question maintenance — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .maint-form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .maint-back-bar { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+  });
+})();
+</script>
+
+<main class="admin-wrap">
+  <div class="maint-back-bar">
+    <form method="get" action="/admin/questions" style="display:inline">
+      <button class="btn btn-sm" type="submit">‹ Back to question review</button>
+    </form>
+  </div>
+
+  <h1>Question maintenance</h1>
+  <p class="muted">Heavy admin-only operations that touch the live bank in bulk. Kept off the review queue so day-to-day approvals stay focused. All actions below are Claude-powered, idempotent (safe to re-run — they only touch rows still missing the relevant field), and bounded by the daily Anthropic budget.</p>
+
+  <p class="banner banner-ok" th:if="${classifyMessage}" th:text="${classifyMessage}">classify message</p>
+  <p class="banner banner-ok" th:if="${enrichMessage}" th:text="${enrichMessage}">enrich message</p>
+
+  <section class="admin-section">
+    <h2>Topic classification</h2>
+    <p class="muted">Assign each approved question to one of the official exam topics so session sampling matches the real exam mix. Uses Claude Haiku (~$0.15 for 250 questions) and only touches untagged rows.</p>
+    <div class="maint-form-row">
+      <form method="post" action="/admin/questions/classify-topics" style="display:inline">
+        <input type="hidden" name="examSlug" value="salesforce-admin" />
+        <button class="btn btn-primary btn-sm" type="submit"
+                onclick="return confirm('Classify every untagged Salesforce-Admin question via Claude Haiku? Bounded by the daily Anthropic budget.')">
+          Classify Salesforce-Admin topics
+        </button>
+      </form>
+      <form method="post" action="/admin/questions/classify-topics" style="display:inline">
+        <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
+        <button class="btn btn-sm" type="submit">Classify MCPA topics</button>
+      </form>
+      <form method="post" action="/admin/questions/classify-topics" style="display:inline">
+        <input type="hidden" name="examSlug" value="agentforce-specialist" />
+        <button class="btn btn-sm" type="submit">Classify Agentforce topics</button>
+      </form>
+      <form method="post" action="/admin/questions/classify-topics" style="display:inline">
+        <input type="hidden" name="examSlug" value="data-cloud-consultant" />
+        <button class="btn btn-sm" type="submit">Classify Data-Cloud topics</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="admin-section">
+    <h2>Explanation backfill</h2>
+    <p class="muted">For questions that landed without an explanation (e.g. uploaded screenshots that only showed the prompt + choices), generate a 2–3 sentence explanation + a vendor doc link via Claude Haiku. References point at the canonical site for each exam: <code>help.salesforce.com</code>, <code>trailhead.salesforce.com</code>, <code>docs.mulesoft.com</code>, etc. Only touches rows missing both — safe to re-run.</p>
+    <div class="maint-form-row">
+      <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
+        <input type="hidden" name="examSlug" value="salesforce-admin" />
+        <button class="btn btn-primary btn-sm" type="submit"
+                onclick="return confirm('Enrich missing Salesforce-Admin explanations from help.salesforce.com / Trailhead? Bounded by the daily Anthropic budget.')">
+          Enrich Salesforce-Admin
+        </button>
+      </form>
+      <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
+        <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
+        <button class="btn btn-sm" type="submit"
+                onclick="return confirm('Enrich MCPA explanations from docs.mulesoft.com? Bounded by the daily Anthropic budget.')">
+          Enrich MCPA
+        </button>
+      </form>
+      <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
+        <input type="hidden" name="examSlug" value="agentforce-specialist" />
+        <button class="btn btn-sm" type="submit">Enrich Agentforce</button>
+      </form>
+      <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
+        <input type="hidden" name="examSlug" value="data-cloud-consultant" />
+        <button class="btn btn-sm" type="submit">Enrich Data-Cloud</button>
+      </form>
+    </div>
+  </section>
+</main>
+</body>
+</html>
