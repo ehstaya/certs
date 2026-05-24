@@ -107,7 +107,7 @@
       // Back-compat: older pages may still have #userName around.
       const legacy = document.getElementById("userName");
       if (legacy) legacy.textContent = name;
-      if (role === "ADMIN") {
+      if (role === "ADMIN" || role === "SUPERADMIN") {
         document.querySelectorAll(".admin-only").forEach(el => { el.style.display = ""; });
       }
     } catch (e) {

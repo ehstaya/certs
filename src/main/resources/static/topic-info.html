@@ -82,7 +82,7 @@
       const role = me.role || "USER";
       const badge = document.getElementById("userBadge");
       if (badge) badge.textContent = name + " (" + role + ")";
-      if (role === "ADMIN") {
+      if (role === "ADMIN" || role === "SUPERADMIN") {
         document.querySelectorAll(".admin-only").forEach(el => { el.style.display = ""; });
       }
     }
