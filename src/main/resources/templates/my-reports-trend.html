@@ -95,6 +95,12 @@
           of <strong th:text="${slots}">5</strong> slots used)</span>
         <span><span class="legend-swatch" style="background:#f59e0b"></span>Passing threshold: <strong th:text="${passingPct + '%'}">65%</strong></span>
       </div>
+
+      <p class="muted" th:if="${#lists.size(trend) == 1}"
+         style="background:#fef3c7;border-left:3px solid #f59e0b;padding:8px 12px;border-radius:4px;">
+        ℹ Your trend line will appear after your <strong>second</strong> attempt — a line needs at least two points.
+        Your current attempt is marked on the chart.
+      </p>
       <svg class="trend-chart" th:attr="viewBox=|0 0 ${chartW} ${chartH}|" preserveAspectRatio="xMidYMid meet">
         <!-- Y axis ticks (0, 25, 50, 75, 100) -->
         <g>
@@ -141,8 +147,14 @@
               th:x="${chartW - padR - 90}"
               th:y="${passY - 6}"
               th:text="${'Pass: ' + passingPct + '%'}">Pass: 65%</text>
-        <!-- The score line — the focus of the chart. -->
-        <polyline class="trend-line" th:attr="points=${polyPoints}" />
+        <!-- The score line — the focus of the chart. With a single attempt
+             a <polyline> draws nothing, so we instead render a short
+             horizontal stub through the lone marker to give visual feedback. -->
+        <polyline class="trend-line" th:if="${#lists.size(trend) > 1}" th:attr="points=${polyPoints}" />
+        <line class="trend-line"
+              th:if="${#lists.size(trend) == 1}"
+              th:x1="${markers[0][0] - 18}" th:x2="${markers[0][0] + 18}"
+              th:y1="${markers[0][1]}"      th:y2="${markers[0][1]}" />
         <!-- Tiny markers as hover targets so users can still see exact
              per-attempt scores; pass/fail conveyed by ring color. -->
         <g>
