@@ -88,8 +88,23 @@ public class VoteService {
     public record VerifierFeedbackEntry(
             Long voteId, Long questionId, Integer questionNumber, String questionText,
             String examSlug, String examName,
-            int voteValue, String reason, String voterEmail, Instant votedAt
-    ) {}
+            int voteValue, String reason,
+            String voterEmail, String voterFullName,
+            Instant votedAt
+    ) {
+        /** Display name for the voter — full name if set, otherwise email. */
+        public String voterDisplay() {
+            return (voterFullName != null && !voterFullName.isBlank()) ? voterFullName : voterEmail;
+        }
+    }
+
+    /** Lightweight voter for the verifier-feedback dropdown. */
+    public record FeedbackVoter(String email, String fullName, long up, long down) {
+        public long total() { return up + down; }
+        public String display() {
+            return (fullName != null && !fullName.isBlank()) ? fullName : email;
+        }
+    }
 
     /** Verifier-feedback admin report — list of every vote that carries a
      *  reason (verifiers are forced to supply one, optional for everyone else).
@@ -110,9 +125,30 @@ public class VoteService {
                     v.getVoteValue(),
                     v.getReason(),
                     u == null ? "(unknown)" : u.getEmail(),
+                    u == null ? "" : u.getFullName(),
                     v.getVotedAt()
             ));
         }
+        return out;
+    }
+
+    /** Distinct voters who have left at least one reasoned vote, with their
+     *  up/down totals — drives the "filter by verifier" dropdown on the
+     *  feedback report. Sorted by voter display name. */
+    public List<FeedbackVoter> feedbackVoters() {
+        List<QuestionVote> rows = votes.findVotesWithReasons(null);
+        java.util.Map<String, FeedbackVoter> byEmail = new java.util.LinkedHashMap<>();
+        for (QuestionVote v : rows) {
+            User u = v.getUser();
+            if (u == null) continue;
+            String email = u.getEmail();
+            FeedbackVoter cur = byEmail.get(email);
+            long up = (cur == null ? 0 : cur.up())   + (v.getVoteValue() > 0 ? 1 : 0);
+            long dn = (cur == null ? 0 : cur.down()) + (v.getVoteValue() < 0 ? 1 : 0);
+            byEmail.put(email, new FeedbackVoter(email, u.getFullName(), up, dn));
+        }
+        List<FeedbackVoter> out = new java.util.ArrayList<>(byEmail.values());
+        out.sort((a, b) -> a.display().compareToIgnoreCase(b.display()));
         return out;
     }
 

@@ -86,14 +86,51 @@ public class ReportsController {
         return "reports-dashboard";
     }
 
+    /** Summary record for the verifier-feedback report header: totals after
+     *  filters are applied so the admin can see the up/down split at a glance. */
+    public record FeedbackTotals(long up, long down, long rows, int distinctVoters) {
+        public long total() { return up + down; }
+        public int percentUp() {
+            return total() == 0 ? 0 : (int) Math.round(100.0 * up / total());
+        }
+    }
+
     /** Verifier-feedback report. Lists every vote with a reason; admin can
-     *  retire a question or send it back to the review queue from each row. */
+     *  retire a question or send it back to the review queue from each row.
+     *  Supports filtering by exam and by specific voter (verifier). */
     @GetMapping("/verifier-feedback")
-    public String verifierFeedback(@RequestParam(name = "exam", required = false) String exam, Model model) {
+    public String verifierFeedback(@RequestParam(name = "exam", required = false) String exam,
+                                   @RequestParam(name = "voter", required = false) String voter,
+                                   Model model) {
         List<ExamDto> exams = examService.listActive();
+        List<VoteService.VerifierFeedbackEntry> rows = voteService.verifierFeedback(exam);
+
+        // Voter dropdown is built from ALL reasoned votes (regardless of the
+        // current exam filter) so admins can still switch voters after picking
+        // an exam. Counts on the dropdown also stay stable for the same reason.
+        List<VoteService.FeedbackVoter> voters = voteService.feedbackVoters();
+
+        final String voterFilter = (voter == null || voter.isBlank()) ? null : voter.trim();
+        if (voterFilter != null) {
+            rows = rows.stream()
+                    .filter(r -> voterFilter.equalsIgnoreCase(r.voterEmail()))
+                    .toList();
+        }
+
+        long up = 0, down = 0;
+        java.util.Set<String> distinctVoterEmails = new java.util.HashSet<>();
+        for (VoteService.VerifierFeedbackEntry r : rows) {
+            if (r.voteValue() > 0) up++;
+            else if (r.voteValue() < 0) down++;
+            if (r.voterEmail() != null) distinctVoterEmails.add(r.voterEmail());
+        }
+
         model.addAttribute("exams", exams);
         model.addAttribute("exam", exam == null ? "" : exam);
-        model.addAttribute("rows", voteService.verifierFeedback(exam));
+        model.addAttribute("voters", voters);
+        model.addAttribute("voter", voterFilter == null ? "" : voterFilter);
+        model.addAttribute("rows", rows);
+        model.addAttribute("totals", new FeedbackTotals(up, down, rows.size(), distinctVoterEmails.size()));
         model.addAttribute("section", "verifier-feedback");
         return "verifier-feedback-report";
     }
