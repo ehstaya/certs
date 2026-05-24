@@ -1,8 +1,11 @@
 package com.sfquiz.controller;
 
+import com.sfquiz.dto.ExamDto;
 import com.sfquiz.entity.User;
 import com.sfquiz.entity.UserRole;
 import com.sfquiz.entity.UserStatus;
+import com.sfquiz.service.DomainAdminService;
+import com.sfquiz.service.ExamService;
 import com.sfquiz.service.UserService;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -15,25 +18,46 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Controller
 @RequestMapping("/admin")
 public class AdminController {
 
     private final UserService users;
+    private final DomainAdminService domainAdmins;
+    private final ExamService examService;
 
-    public AdminController(UserService users) {
+    public AdminController(UserService users, DomainAdminService domainAdmins, ExamService examService) {
         this.users = users;
+        this.domainAdmins = domainAdmins;
+        this.examService = examService;
     }
 
     @GetMapping
     public String dashboard(Model model) {
         List<User> all = users.listAll();
+        List<User> active = all.stream().filter(u -> u.getStatus() == UserStatus.ACTIVE).toList();
         model.addAttribute("pending", all.stream().filter(u -> u.getStatus() == UserStatus.PENDING).toList());
-        model.addAttribute("active",  all.stream().filter(u -> u.getStatus() == UserStatus.ACTIVE).toList());
+        model.addAttribute("active",  active);
         model.addAttribute("rejected",all.stream().filter(u -> u.getStatus() == UserStatus.REJECTED).toList());
         model.addAttribute("disabled",all.stream().filter(u -> u.getStatus() == UserStatus.DISABLED).toList());
+
+        // Per-user list of exam-slugs they currently govern (drives the
+        // domain-admin assignment matrix on the page). Empty for non-admins.
+        List<ExamDto> activeExams = examService.listActive();
+        Map<Long, Set<String>> assigned = new HashMap<>();
+        for (User u : active) {
+            if (u.getRole() == UserRole.ADMIN || u.getRole() == UserRole.SUPERADMIN) {
+                assigned.put(u.getId(), new HashSet<>(domainAdmins.examSlugsFor(u)));
+            }
+        }
+        model.addAttribute("activeExams", activeExams);
+        model.addAttribute("assigned", assigned);
         return "admin";
     }
 
@@ -100,10 +124,43 @@ public class AdminController {
         return "redirect:/admin?promoted";
     }
 
+    @PostMapping("/users/{id}/promote-superadmin")
+    public String promoteSuperAdmin(@PathVariable Long id) {
+        users.promoteToSuperAdmin(id);
+        return "redirect:/admin?promotedSuper";
+    }
+
+    @PostMapping("/users/{id}/demote-superadmin")
+    public String demoteSuperAdmin(@PathVariable Long id, Authentication auth) {
+        users.demoteSuperAdminToAdmin(id, auth == null ? null : auth.getName());
+        return "redirect:/admin?demotedSuper";
+    }
+
     @PostMapping("/users/{id}/demote")
     public String demote(@PathVariable Long id, Authentication auth) {
-        users.demoteFromAdmin(id, auth == null ? null : auth.getName());
+        User demoted = users.demoteFromAdmin(id, auth == null ? null : auth.getName());
+        // Demoting out of ADMIN/SUPERADMIN role wipes their domain assignments
+        // so they don't linger as orphan rows — if they're re-promoted later
+        // the SUPERADMIN must explicitly re-assign exam access.
+        if (demoted != null && demoted.getRole() != UserRole.ADMIN && demoted.getRole() != UserRole.SUPERADMIN) {
+            domainAdmins.clearAssignments(demoted);
+        }
         return "redirect:/admin?demoted";
+    }
+
+    /** Replace the set of exams this admin user governs. SUPERADMIN-only;
+     *  enforced by /admin/users/** path rule in SecurityConfig. The form
+     *  posts a list of checked exam slugs as repeated {@code exams} params;
+     *  any slug not in the list is removed. */
+    @PostMapping("/users/{id}/domain-assignments")
+    public String setDomainAssignments(@PathVariable Long id,
+                                       @RequestParam(name = "exams", required = false) List<String> exams,
+                                       Authentication auth,
+                                       RedirectAttributes flash) {
+        String byEmail = auth == null ? null : auth.getName();
+        domainAdmins.replaceAssignments(id, exams, byEmail);
+        flash.addFlashAttribute("adminMessage", "Domain assignments updated.");
+        return "redirect:/admin";
     }
 
     /** Permanent deletion of any user — USER, VERIFIER, or ADMIN. Guarded by

@@ -40,12 +40,19 @@
 
 <main class="admin-wrap">
   <h1>User administration</h1>
-  <p class="muted">Approve new registrations. Approving a user generates a temporary password and emails it to them; they will be required to change it on first sign-in.</p>
+  <p class="muted" sec:authorize="hasRole('SUPERADMIN')">
+    Approve new registrations. Approving a user generates a temporary password and emails it to them; they will be required to change it on first sign-in. As a <strong>super admin</strong> you can also assign domain admins to specific exams via the matrix at the bottom of the page.
+  </p>
+  <p class="muted" sec:authorize="!hasRole('SUPERADMIN')" style="background:#fef3c7;border-left:3px solid #f59e0b;padding:8px 12px;border-radius:4px;">
+    ℹ Read-only view. Only a <strong>super admin</strong> can promote / demote users or change domain-admin assignments. As a domain admin you can still review and manage questions for the exam(s) you've been assigned.
+  </p>
 
   <p class="banner banner-error" th:if="${adminError}" th:text="${adminError}">error</p>
   <p class="banner banner-ok"    th:if="${adminMessage}" th:text="${adminMessage}">message</p>
   <p class="banner banner-ok"    th:if="${param.promoted}">User promoted to admin. They've been emailed about the new access.</p>
-  <p class="banner banner-ok"    th:if="${param.demoted}">Admin demoted to regular user.</p>
+  <p class="banner banner-ok"    th:if="${param.promotedSuper}">User promoted to <strong>SUPER ADMIN</strong>.</p>
+  <p class="banner banner-ok"    th:if="${param.demoted}">User demoted from admin role.</p>
+  <p class="banner banner-ok"    th:if="${param.demotedSuper}">Super admin stepped down to regular admin.</p>
 
   <section class="issued-card" th:if="${issuedPassword != null}">
     <h2 th:if="${issuedReason == 'approved'}">Account approved — share these credentials</h2>
@@ -65,7 +72,7 @@
     </table>
   </section>
 
-  <section class="admin-section">
+  <section class="admin-section" sec:authorize="hasRole('SUPERADMIN')">
     <h2>Add a user manually</h2>
     <p class="muted">Create an ACTIVE account in one step. A temp password is generated and shown here once — copy &amp; share via Slack. The user must change it on first sign-in.</p>
     <form method="post" action="/admin/users/new" class="add-user-form">
@@ -82,7 +89,8 @@
         <select name="role" required>
           <option value="USER">User — practices tests, can contribute questions</option>
           <option value="VERIFIER">Verifier — votes with required reasons for quality feedback</option>
-          <option value="ADMIN">Admin — full management access</option>
+          <option value="ADMIN">Domain admin — manages assigned exam(s) only (assign exams below)</option>
+          <option value="SUPERADMIN">Super admin — manages users + every exam</option>
         </select>
       </label>
       <button class="btn btn-primary" type="submit">Create user</button>
@@ -100,12 +108,15 @@
           <td th:text="${u.fullName}">Name</td>
           <td th:text="${#temporals.format(u.createdAt, 'yyyy-MM-dd HH:mm')}">2024-01-01 12:00</td>
           <td class="actions-col">
-            <form method="post" th:action="@{|/admin/users/${u.id}/approve|}" style="display:inline">
+            <form method="post" th:action="@{|/admin/users/${u.id}/approve|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')">
               <button class="btn btn-primary btn-sm" type="submit">Approve</button>
             </form>
-            <form method="post" th:action="@{|/admin/users/${u.id}/reject|}" style="display:inline">
+            <form method="post" th:action="@{|/admin/users/${u.id}/reject|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')">
               <button class="btn btn-danger btn-sm" type="submit">Reject</button>
             </form>
+            <span class="muted" sec:authorize="!hasRole('SUPERADMIN')" style="font-size:12px;">read-only</span>
           </td>
         </tr>
       </tbody>
@@ -125,17 +136,42 @@
           <td th:text="${u.approvedAt != null ? #temporals.format(u.approvedAt, 'yyyy-MM-dd HH:mm') : '—'}">—</td>
           <td th:text="${u.mustChangePassword} ? 'Yes' : 'No'">No</td>
           <td class="actions-col">
-            <!-- USER role: can promote to admin, can disable -->
-            <form method="post" th:action="@{|/admin/users/${u.id}/promote|}" style="display:inline" th:if="${u.role.name() != 'ADMIN'}">
+            <!-- Role transitions — superadmins only. Domain admins (ADMIN) can
+                 see the page but can't change other users' roles. -->
+            <form method="post" th:action="@{|/admin/users/${u.id}/promote|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')"
+                  th:if="${u.role.name() != 'ADMIN' and u.role.name() != 'SUPERADMIN'}">
               <button class="btn btn-primary btn-sm" type="submit"
-                      title="Grant admin access — they'll be able to approve questions and manage users."
-                      data-confirm-title="Promote to admin"
-                      data-confirm="Promote this user to admin? They will be able to approve questions and manage users."
+                      title="Grant domain-admin access (assign exams below)."
+                      data-confirm-title="Promote to domain admin"
+                      data-confirm="Promote this user to a domain admin? Until you tick at least one exam in the Domain admin assignments section below, they will be able to sign in but won't be able to approve / reject any questions."
                       data-confirm-ok="Promote">
-                Promote to admin
+                Promote to domain admin
               </button>
             </form>
-            <form method="post" th:action="@{|/admin/users/${u.id}/reset-password|}" style="display:inline">
+            <form method="post" th:action="@{|/admin/users/${u.id}/promote-superadmin|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')"
+                  th:if="${u.role.name() != 'SUPERADMIN'}">
+              <button class="btn btn-warning btn-sm" type="submit"
+                      title="Grant super-admin access — manages users + every exam."
+                      data-confirm-title="Promote to SUPER admin"
+                      data-confirm="Promote this user to SUPER ADMIN? They will be able to manage other users (including you) and govern every exam. Use sparingly."
+                      data-confirm-ok="Promote to super admin">
+                Promote to super admin
+              </button>
+            </form>
+            <form method="post" th:action="@{|/admin/users/${u.id}/demote-superadmin|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')"
+                  th:if="${u.role.name() == 'SUPERADMIN'}">
+              <button class="btn btn-warning btn-sm" type="submit"
+                      data-confirm-title="Step down super admin"
+                      data-confirm="Step this super admin down to a regular domain admin? They will keep any domain-admin exam assignments but lose user-management access."
+                      data-confirm-ok="Step down">
+                Step down to admin
+              </button>
+            </form>
+            <form method="post" th:action="@{|/admin/users/${u.id}/reset-password|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')">
               <button class="btn btn-sm" type="submit"
                       title="Generate a new temp password. The user will be forced to change it on next sign-in."
                       data-confirm-title="Reset password"
@@ -144,20 +180,25 @@
                 Reset password
               </button>
             </form>
-            <form method="post" th:action="@{|/admin/users/${u.id}/disable|}" style="display:inline" th:if="${u.role.name() != 'ADMIN'}">
+            <form method="post" th:action="@{|/admin/users/${u.id}/disable|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')"
+                  th:if="${u.role.name() != 'ADMIN' and u.role.name() != 'SUPERADMIN'}">
               <button class="btn btn-warning btn-sm" type="submit">Disable</button>
             </form>
-            <!-- ADMIN role: can demote (server-side guards prevent demoting self or the last admin) -->
-            <form method="post" th:action="@{|/admin/users/${u.id}/demote|}" style="display:inline" th:if="${u.role.name() == 'ADMIN'}">
+            <!-- Demote = ADMIN → USER. Server guards self-demote + last-admin. -->
+            <form method="post" th:action="@{|/admin/users/${u.id}/demote|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')"
+                  th:if="${u.role.name() == 'ADMIN'}">
               <button class="btn btn-warning btn-sm" type="submit"
-                      data-confirm-title="Demote admin"
-                      data-confirm="Demote this admin back to a regular user?"
+                      data-confirm-title="Demote domain admin"
+                      data-confirm="Demote this domain admin back to a regular user? Their domain assignments will be cleared."
                       data-confirm-ok="Demote">
-                Demote
+                Demote to user
               </button>
             </form>
             <!-- Hard delete — works for any role. Server guards self-delete + last-admin-delete. -->
-            <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline">
+            <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')">
               <button class="btn btn-danger btn-sm" type="submit"
                       data-confirm-title="Delete user permanently"
                       th:attr="data-confirm=|Permanently delete ${u.email} (${u.role})?
@@ -173,6 +214,62 @@ If you just want to revoke access without losing data, click Disable instead.|"
         </tr>
       </tbody>
     </table>
+  </section>
+
+  <!-- Domain admin assignments. Each ADMIN/SUPERADMIN user gets a row; each
+       active exam is a checkbox. SUPERADMIN-only. The matrix grows
+       automatically as new exams are added to the platform — no extra UI
+       wiring needed when a new certification ships. -->
+  <section class="admin-section" sec:authorize="hasRole('SUPERADMIN')">
+    <h2>Domain admin assignments</h2>
+    <p class="muted">A domain admin (ADMIN role) can only review/approve/reject/edit/retire questions for the exam(s) you tick below. SUPERADMINs implicitly govern every exam — their rows are shown for visibility but the checkboxes are read-only / informational. New certifications added to the platform appear here automatically as new columns.</p>
+    <div class="empty" th:if="${#lists.isEmpty(active)}">No active admin users yet.</div>
+    <div th:unless="${#lists.isEmpty(activeExams)}">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th th:each="ex : ${activeExams}" th:text="${ex.name}" style="text-align:center; min-width:120px;">Exam</th>
+            <th class="actions-col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="u : ${active}" th:if="${u.role.name() == 'ADMIN' or u.role.name() == 'SUPERADMIN'}">
+            <td>
+              <div th:text="${u.fullName != null and !#strings.isEmpty(u.fullName)} ? ${u.fullName} : ${u.email}">Name</div>
+              <div class="muted" style="font-size:12px"
+                   th:if="${u.fullName != null and !#strings.isEmpty(u.fullName)}"
+                   th:text="${u.email}">email</div>
+            </td>
+            <td>
+              <span th:text="${u.role}" style="font-size:12px;font-weight:600;">ROLE</span>
+              <div class="muted" th:if="${u.role.name() == 'SUPERADMIN'}" style="font-size:11px;">all exams</div>
+            </td>
+            <th:block th:if="${u.role.name() == 'SUPERADMIN'}">
+              <td th:each="ex : ${activeExams}" style="text-align:center;">
+                <span title="Super admins implicitly govern every exam">✓</span>
+              </td>
+              <td class="actions-col"></td>
+            </th:block>
+            <th:block th:if="${u.role.name() == 'ADMIN'}">
+              <td colspan="0" style="padding:0;" th:colspan="${#lists.size(activeExams) + 1}">
+                <form method="post" th:action="@{|/admin/users/${u.id}/domain-assignments|}" style="display:flex; align-items:center; gap:8px; padding:8px 12px;">
+                  <th:block th:each="ex : ${activeExams}">
+                    <label style="display:inline-flex; align-items:center; gap:4px; min-width:120px; justify-content:center; font-size:13px;">
+                      <input type="checkbox" name="exams" th:value="${ex.slug}"
+                             th:checked="${assigned[u.id] != null and assigned[u.id].contains(ex.slug)}" />
+                      <span class="muted" style="font-size:11px;" th:text="${ex.slug}">slug</span>
+                    </label>
+                  </th:block>
+                  <button class="btn btn-primary btn-sm" type="submit" style="margin-left:auto;">Save</button>
+                </form>
+              </td>
+            </th:block>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <section class="admin-section" th:unless="${#lists.isEmpty(rejected)}">
@@ -209,7 +306,8 @@ If you just want to revoke access without losing data, click Disable instead.|"
           <td th:text="${u.fullName}">Name</td>
           <td th:text="${#temporals.format(u.createdAt, 'yyyy-MM-dd HH:mm')}">2024-01-01 12:00</td>
           <td class="actions-col">
-            <form method="post" th:action="@{|/admin/users/${u.id}/reactivate|}" style="display:inline">
+            <form method="post" th:action="@{|/admin/users/${u.id}/reactivate|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')">
               <button class="btn btn-primary btn-sm" type="submit">Reactivate</button>
             </form>
             <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline">

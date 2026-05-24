@@ -270,8 +270,18 @@ public class UserService {
         log.info("Password reset via token for {}", u.getEmail());
     }
 
+    /** "Admin-level" = ADMIN or SUPERADMIN. Used by AdminBootstrap to decide
+     *  whether the initial admin still needs to be seeded. */
     public boolean adminExists() {
-        return users.existsByRole(UserRole.ADMIN);
+        return users.existsByRole(UserRole.ADMIN) || users.existsByRole(UserRole.SUPERADMIN);
+    }
+
+    public boolean superAdminExists() {
+        return users.existsByRole(UserRole.SUPERADMIN);
+    }
+
+    private long adminOrSuperCount() {
+        return users.countByRole(UserRole.ADMIN) + users.countByRole(UserRole.SUPERADMIN);
     }
 
     /** Promote an ACTIVE user to ADMIN so they can approve questions / manage users.
@@ -289,8 +299,9 @@ public class UserService {
         if (callerEmail != null && callerEmail.equalsIgnoreCase(u.getEmail())) {
             throw new IllegalStateException("You can't delete your own account.");
         }
-        if (u.getRole() == UserRole.ADMIN && users.countByRole(UserRole.ADMIN) <= 1) {
-            throw new IllegalStateException("Can't delete the last remaining admin.");
+        if ((u.getRole() == UserRole.ADMIN || u.getRole() == UserRole.SUPERADMIN)
+                && adminOrSuperCount() <= 1) {
+            throw new IllegalStateException("Can't delete the last remaining admin / super admin.");
         }
         // Clean up FK-bearing rows first so the User delete doesn't blow up
         // on a constraint violation.
@@ -337,18 +348,19 @@ public class UserService {
     }
 
     /** Demote an admin back to a regular user. Refuses to demote the caller or
-     *  the last admin (would lock the system out). */
+     *  the last admin/super admin (would lock the system out). SUPERADMIN can
+     *  also be demoted via this method (handled identically). */
     public User demoteFromAdmin(Long userId, String callerEmail) {
         User u = users.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-        if (u.getRole() != UserRole.ADMIN) {
+        if (u.getRole() != UserRole.ADMIN && u.getRole() != UserRole.SUPERADMIN) {
             return u;  // already not an admin
         }
         if (callerEmail != null && callerEmail.equalsIgnoreCase(u.getEmail())) {
             throw new IllegalStateException("You can't demote yourself.");
         }
-        if (users.countByRole(UserRole.ADMIN) <= 1) {
-            throw new IllegalStateException("Can't demote the last remaining admin.");
+        if (adminOrSuperCount() <= 1) {
+            throw new IllegalStateException("Can't demote the last remaining admin / super admin.");
         }
         u.setRole(UserRole.USER);
         users.save(u);
@@ -356,18 +368,93 @@ public class UserService {
         return u;
     }
 
+    /** Promote an ACTIVE user (typically an ADMIN) to SUPERADMIN. Only the
+     *  caller-side controller should invoke this, and only when the caller is
+     *  themselves a SUPERADMIN — the controller enforces that via
+     *  /admin/users/** routing rules. Idempotent. */
+    public User promoteToSuperAdmin(Long userId) {
+        User u = users.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (u.getRole() == UserRole.SUPERADMIN) {
+            return u; // already super admin
+        }
+        if (u.getStatus() != UserStatus.ACTIVE) {
+            throw new IllegalStateException("Only ACTIVE users can be promoted to super admin.");
+        }
+        u.setRole(UserRole.SUPERADMIN);
+        users.save(u);
+        log.warn("Promoted user {} to SUPERADMIN", u.getEmail());
+        return u;
+    }
+
+    /** Step a SUPERADMIN down to plain ADMIN (still admin-capable but no
+     *  longer able to manage users or assign domain admins). Refuses to
+     *  step down the caller or the last super admin (would orphan the
+     *  user-management UI). */
+    public User demoteSuperAdminToAdmin(Long userId, String callerEmail) {
+        User u = users.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (u.getRole() != UserRole.SUPERADMIN) {
+            return u; // not a super admin
+        }
+        if (callerEmail != null && callerEmail.equalsIgnoreCase(u.getEmail())) {
+            throw new IllegalStateException("You can't change your own super-admin status.");
+        }
+        if (users.countByRole(UserRole.SUPERADMIN) <= 1) {
+            throw new IllegalStateException("Can't demote the last super admin — promote someone else first.");
+        }
+        u.setRole(UserRole.ADMIN);
+        users.save(u);
+        log.warn("Demoted SUPERADMIN {} → ADMIN (by {})", u.getEmail(), callerEmail);
+        return u;
+    }
+
     public User createAdmin(String emailAddr, String fullName, String password) {
+        return upsertWithRole(emailAddr, fullName, password, UserRole.ADMIN);
+    }
+
+    /** Create / upsert the bootstrap SUPERADMIN. Called from AdminBootstrap
+     *  on a fresh DB so there's always exactly one super admin able to assign
+     *  domain admins. */
+    public User createSuperAdmin(String emailAddr, String fullName, String password) {
+        return upsertWithRole(emailAddr, fullName, password, UserRole.SUPERADMIN);
+    }
+
+    private User upsertWithRole(String emailAddr, String fullName, String password, UserRole role) {
         String normalized = emailAddr.trim().toLowerCase();
         User u = users.findByEmailIgnoreCase(normalized).orElseGet(User::new);
         u.setEmail(normalized);
         u.setFullName(fullName);
-        u.setRole(UserRole.ADMIN);
+        u.setRole(role);
         u.setStatus(UserStatus.ACTIVE);
         u.setMustChangePassword(false);
         u.setPasswordHash(encoder.encode(password));
         if (u.getCreatedAt() == null) u.setCreatedAt(Instant.now());
         u.setApprovedAt(Instant.now());
         return users.save(u);
+    }
+
+    /** Idempotent: ensures the user identified by {@code emailAddr} is a
+     *  SUPERADMIN. Used by AdminBootstrap on every boot so the configured
+     *  bootstrap email keeps super-admin access even if it was demoted by
+     *  hand. No-op if the user doesn't exist. */
+    public boolean ensureSuperAdminByEmail(String emailAddr) {
+        if (emailAddr == null || emailAddr.isBlank()) return false;
+        Optional<User> opt = users.findByEmailIgnoreCase(emailAddr.trim());
+        if (opt.isEmpty()) return false;
+        User u = opt.get();
+        if (u.getRole() == UserRole.SUPERADMIN) return false;
+        u.setRole(UserRole.SUPERADMIN);
+        if (u.getStatus() != UserStatus.ACTIVE) {
+            u.setStatus(UserStatus.ACTIVE);
+        }
+        users.save(u);
+        log.warn("Bootstrap: ensured {} is a SUPERADMIN", u.getEmail());
+        return true;
+    }
+
+    public List<User> listByRole(UserRole role) {
+        return users.findAll().stream().filter(u -> u.getRole() == role).toList();
     }
 
     private void validatePasswordStrength(String pw) {

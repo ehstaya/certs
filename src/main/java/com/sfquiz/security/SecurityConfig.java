@@ -43,7 +43,14 @@ public class SecurityConfig {
                         "/css/**", "/js/**", "/images/**", "/webjars/**",
                         "/favicon.ico", "/error"
                 ).permitAll()
-                .requestMatchers("/admin/**").hasRole("ADMIN")
+                // User-management endpoints are SUPERADMIN-only — domain
+                // admins can only manage questions, never other users.
+                .requestMatchers("/admin/users/**").hasRole("SUPERADMIN")
+                // Everything else under /admin/** is open to both ADMIN
+                // (domain admin) and SUPERADMIN; per-action scoping (which
+                // exam(s) a domain admin governs) is enforced server-side
+                // by AuthorizationService.canManageQuestion / canManageExam.
+                .requestMatchers("/admin/**").hasAnyRole("ADMIN", "SUPERADMIN")
                 // /uploads/** is open to any authenticated user — non-admins
                 // can submit study material; the controller scopes the listing
                 // and enforces ownership on delete/retry/download.

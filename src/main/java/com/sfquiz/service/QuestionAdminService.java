@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /** Import / approve / reject / edit of crawler-supplied questions. */
 @Service
@@ -217,20 +218,37 @@ public class QuestionAdminService {
 
     /** Page through approved questions, optionally filtered to one exam. */
     public PagedApproved approvedPage(String examSlug, int page, int pageSize) {
-        return paged(examSlug, Question.Status.APPROVED, page, pageSize);
+        return paged(examSlug, Question.Status.APPROVED, page, pageSize, null);
     }
 
     /** Page through retired questions, optionally filtered to one exam. */
     public PagedApproved retiredPage(String examSlug, int page, int pageSize) {
-        return paged(examSlug, Question.Status.RETIRED, page, pageSize);
+        return paged(examSlug, Question.Status.RETIRED, page, pageSize, null);
     }
 
-    private PagedApproved paged(String examSlug, Question.Status status, int page, int pageSize) {
+    /** Domain-scoped variant — only rows whose exam slug is in {@code managedSlugs}
+     *  survive. Pass {@code null} (or a set containing the {@code "*"} wildcard)
+     *  to skip the scope filter (super-admin behavior). */
+    public PagedApproved approvedPageScoped(String examSlug, int page, int pageSize, Set<String> managedSlugs) {
+        return paged(examSlug, Question.Status.APPROVED, page, pageSize, managedSlugs);
+    }
+
+    public PagedApproved retiredPageScoped(String examSlug, int page, int pageSize, Set<String> managedSlugs) {
+        return paged(examSlug, Question.Status.RETIRED, page, pageSize, managedSlugs);
+    }
+
+    private PagedApproved paged(String examSlug, Question.Status status, int page, int pageSize,
+                                Set<String> managedSlugs) {
         if (pageSize <= 0) pageSize = 20;
         if (page < 0) page = 0;
         List<Question> all = (examSlug == null || examSlug.isBlank())
                 ? repo.findByStatusOrderByNumber(status)
                 : repo.findByExamSlugAndStatusOrderByNumber(examSlug, status);
+        if (managedSlugs != null && !managedSlugs.contains("*")) {
+            all = all.stream()
+                    .filter(q -> q.getExam() != null && managedSlugs.contains(q.getExam().getSlug()))
+                    .toList();
+        }
         long total = all.size();
         int totalPages = (int) Math.max(1, (total + pageSize - 1) / pageSize);
         if (page >= totalPages) page = totalPages - 1;
@@ -320,12 +338,35 @@ public class QuestionAdminService {
         return repo.findByStatusOrderByNumber(Question.Status.PENDING);
     }
 
+    /** Domain-scoped pending list — drops rows whose exam slug isn't in
+     *  {@code managedSlugs}. Null or "*"-wildcard set means "no filter". */
+    public List<Question> pendingScoped(Set<String> managedSlugs) {
+        List<Question> all = pending();
+        if (managedSlugs == null || managedSlugs.contains("*")) return all;
+        return all.stream()
+                .filter(q -> q.getExam() != null && managedSlugs.contains(q.getExam().getSlug()))
+                .toList();
+    }
+
     public long pendingCount() {
         return repo.countByStatus(Question.Status.PENDING);
     }
 
     public long approvedCount() {
         return repo.countByStatus(Question.Status.APPROVED);
+    }
+
+    /** Counts filtered to the slugs the caller manages. SUPERADMIN ("*") gets
+     *  the unscoped totals. */
+    public long pendingCountScoped(Set<String> managedSlugs)  { return countScoped(Question.Status.PENDING,  managedSlugs); }
+    public long approvedCountScoped(Set<String> managedSlugs) { return countScoped(Question.Status.APPROVED, managedSlugs); }
+    public long retiredCountScoped(Set<String> managedSlugs)  { return countScoped(Question.Status.RETIRED,  managedSlugs); }
+
+    private long countScoped(Question.Status status, Set<String> managedSlugs) {
+        if (managedSlugs == null || managedSlugs.contains("*")) return repo.countByStatus(status);
+        return repo.findByStatusOrderByNumber(status).stream()
+                .filter(q -> q.getExam() != null && managedSlugs.contains(q.getExam().getSlug()))
+                .count();
     }
 
     public List<Question> recentApproved(int limit) {

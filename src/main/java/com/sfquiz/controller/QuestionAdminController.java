@@ -1,8 +1,12 @@
 package com.sfquiz.controller;
 
 import com.sfquiz.dto.ImportExamRequest;
+import com.sfquiz.entity.Question;
+import com.sfquiz.entity.User;
+import com.sfquiz.service.AuthorizationService;
 import com.sfquiz.service.QuestionAdminService;
 import com.sfquiz.service.TopicClassifier;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,10 +16,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Controller
 @RequestMapping("/admin/questions")
@@ -25,25 +32,56 @@ public class QuestionAdminController {
     private final TopicClassifier topicClassifier;
     private final com.sfquiz.service.ExplanationEnricher enricher;
     private final com.sfquiz.service.ExamService examService;
+    private final AuthorizationService authz;
 
     public QuestionAdminController(QuestionAdminService questions,
                                    TopicClassifier topicClassifier,
                                    com.sfquiz.service.ExplanationEnricher enricher,
-                                   com.sfquiz.service.ExamService examService) {
+                                   com.sfquiz.service.ExamService examService,
+                                   AuthorizationService authz) {
         this.questions = questions;
         this.topicClassifier = topicClassifier;
         this.enricher = enricher;
         this.examService = examService;
+        this.authz = authz;
+    }
+
+    /** Resolves the slugs the current caller is allowed to manage. SUPERADMIN
+     *  gets the wildcard ("*") set; ADMINs get only their explicitly-assigned
+     *  exam slugs. Returns an empty set for non-admin callers (which means
+     *  every list comes back empty — defense in depth). */
+    private Set<String> managed(Authentication auth) {
+        User u = authz.currentUser(auth).orElse(null);
+        return authz.managedExamSlugs(u);
+    }
+
+    private void requireCanManage(Authentication auth, Question q) {
+        User u = authz.currentUser(auth).orElse(null);
+        if (!authz.canManageQuestion(u, q)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "You are not a domain admin for this exam.");
+        }
+    }
+
+    private void requireCanManage(Authentication auth, String examSlug) {
+        User u = authz.currentUser(auth).orElse(null);
+        if (!authz.canManageExam(u, examSlug)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "You are not a domain admin for that exam.");
+        }
     }
 
     @GetMapping
-    public String review(Model model) {
-        model.addAttribute("pending", questions.pending());
-        model.addAttribute("pendingCount", questions.pendingCount());
-        model.addAttribute("approvedCount", questions.approvedCount());
-        model.addAttribute("retiredCount", questions.retiredCount());
+    public String review(Authentication auth, Model model) {
+        Set<String> mine = managed(auth);
+        model.addAttribute("pending", questions.pendingScoped(mine));
+        model.addAttribute("pendingCount", questions.pendingCountScoped(mine));
+        model.addAttribute("approvedCount", questions.approvedCountScoped(mine));
+        model.addAttribute("retiredCount", questions.retiredCountScoped(mine));
         model.addAttribute("recentApproved", questions.recentApproved(10));
         model.addAttribute("recentImports", questions.recentImportEventViews());
+        model.addAttribute("managedSlugs", mine);
+        model.addAttribute("isSuperAdmin", AuthorizationService.managesAllExams(mine));
         return "questions";
     }
 
@@ -76,7 +114,9 @@ public class QuestionAdminController {
      *  just skip already-tagged rows. Bounded by the daily Anthropic budget. */
     @PostMapping("/classify-topics")
     public String classifyTopics(@RequestParam(name = "examSlug", defaultValue = "salesforce-admin") String examSlug,
+                                 Authentication auth,
                                  RedirectAttributes flash) {
+        requireCanManage(auth, examSlug);
         TopicClassifier.BatchResult result = topicClassifier.classifyUntaggedFor(examSlug);
         flash.addFlashAttribute("classifyMessage", result.message());
         return "redirect:/admin/questions/maintenance";
@@ -88,44 +128,64 @@ public class QuestionAdminController {
      *  / etc.) — bounded by the daily Anthropic budget; safe to re-run. */
     @PostMapping("/enrich-explanations")
     public String enrichExplanations(@RequestParam(name = "examSlug", defaultValue = "salesforce-admin") String examSlug,
+                                     Authentication auth,
                                      RedirectAttributes flash) {
+        requireCanManage(auth, examSlug);
         com.sfquiz.service.ExplanationEnricher.BatchResult result = enricher.enrichExisting(examSlug);
         flash.addFlashAttribute("enrichMessage", result.message());
         return "redirect:/admin/questions/maintenance";
     }
 
     @PostMapping("/{id}/approve")
-    public String approve(@PathVariable Long id) {
+    public String approve(@PathVariable Long id, Authentication auth) {
+        Question q = questions.get(id);
+        requireCanManage(auth, q);
         questions.approve(id);
         return "redirect:/admin/questions?approved";
     }
 
     @PostMapping("/{id}/reject")
-    public String reject(@PathVariable Long id) {
+    public String reject(@PathVariable Long id, Authentication auth) {
+        Question q = questions.get(id);
+        requireCanManage(auth, q);
         questions.reject(id);
         return "redirect:/admin/questions?rejected";
     }
 
     @GetMapping("/{id}/edit")
-    public String editForm(@PathVariable Long id, Model model) {
-        model.addAttribute("q", questions.get(id));
+    public String editForm(@PathVariable Long id, Authentication auth, Model model) {
+        Question q = questions.get(id);
+        requireCanManage(auth, q);
+        model.addAttribute("q", q);
         return "question-edit";
     }
 
     /** Browse approved questions — exam filter + pagination, with Edit / Delete
-     *  controls per row so admins can fix or remove anything that landed wrong. */
+     *  controls per row so admins can fix or remove anything that landed wrong.
+     *  Domain admins only ever see exams they govern; SUPERADMIN sees every
+     *  exam. The exam dropdown is filtered to match. */
     @GetMapping("/approved")
     public String approved(@RequestParam(name = "exam", defaultValue = "") String exam,
                            @RequestParam(name = "page", defaultValue = "0") int page,
+                           Authentication auth,
                            Model model) {
-        QuestionAdminService.PagedApproved pg = questions.approvedPage(exam, page, 20);
+        Set<String> mine = managed(auth);
+        // If the URL pins a specific exam, gate access to it.
+        if (exam != null && !exam.isBlank()) {
+            requireCanManage(auth, exam);
+        }
+        QuestionAdminService.PagedApproved pg = questions.approvedPageScoped(exam, page, 20, mine);
         model.addAttribute("rows", pg.rows());
         model.addAttribute("page", pg.page());
         model.addAttribute("totalPages", pg.totalPages());
         model.addAttribute("totalElements", pg.totalElements());
         model.addAttribute("pageSize", pg.pageSize());
         model.addAttribute("exam", exam);
-        model.addAttribute("exams", examService.listActive());
+        // Dropdown shows only exams the caller can manage.
+        List<com.sfquiz.dto.ExamDto> allExams = examService.listActive();
+        model.addAttribute("exams", AuthorizationService.managesAllExams(mine)
+                ? allExams
+                : allExams.stream().filter(e -> mine.contains(e.slug())).toList());
         return "approved-questions";
     }
 
@@ -135,8 +195,10 @@ public class QuestionAdminController {
     @PostMapping("/{id}/delete")
     public String delete(@PathVariable Long id,
                          @RequestParam(name = "returnTo", required = false) String returnTo,
-                         org.springframework.security.core.Authentication auth,
-                         org.springframework.web.servlet.mvc.support.RedirectAttributes flash) {
+                         Authentication auth,
+                         RedirectAttributes flash) {
+        Question q = questions.get(id);
+        requireCanManage(auth, q);
         String adminEmail = auth == null ? null : auth.getName();
         questions.retire(id, adminEmail);
         flash.addFlashAttribute("retiredId", id);
@@ -151,7 +213,10 @@ public class QuestionAdminController {
     @PostMapping("/{id}/send-back")
     public String sendBack(@PathVariable Long id,
                            @RequestParam(name = "returnTo", required = false) String returnTo,
-                           org.springframework.web.servlet.mvc.support.RedirectAttributes flash) {
+                           Authentication auth,
+                           RedirectAttributes flash) {
+        Question q = questions.get(id);
+        requireCanManage(auth, q);
         questions.sendBackToReview(id);
         flash.addFlashAttribute("sentBackId", id);
         if (returnTo != null && returnTo.startsWith("/admin/")) {
@@ -163,7 +228,10 @@ public class QuestionAdminController {
     /** Restore a RETIRED question back to APPROVED. */
     @PostMapping("/{id}/restore")
     public String restore(@PathVariable Long id,
-                          org.springframework.web.servlet.mvc.support.RedirectAttributes flash) {
+                          Authentication auth,
+                          RedirectAttributes flash) {
+        Question q = questions.get(id);
+        requireCanManage(auth, q);
         questions.restore(id);
         flash.addFlashAttribute("restoredId", id);
         return "redirect:/admin/questions/retired";
@@ -172,25 +240,36 @@ public class QuestionAdminController {
     /** Permanent deletion — only available from the retired queue. */
     @PostMapping("/{id}/permanently-delete")
     public String permanentlyDelete(@PathVariable Long id,
-                                    org.springframework.web.servlet.mvc.support.RedirectAttributes flash) {
+                                    Authentication auth,
+                                    RedirectAttributes flash) {
+        Question q = questions.get(id);
+        requireCanManage(auth, q);
         questions.permanentlyDelete(id);
         flash.addFlashAttribute("permanentlyDeletedId", id);
         return "redirect:/admin/questions/retired";
     }
 
-    /** Retired queue — paged, filterable, shows who retired each row. */
+    /** Retired queue — paged, filterable, scoped to the caller's managed exams. */
     @GetMapping("/retired")
     public String retired(@RequestParam(name = "exam", defaultValue = "") String exam,
                           @RequestParam(name = "page", defaultValue = "0") int page,
+                          Authentication auth,
                           Model model) {
-        QuestionAdminService.PagedApproved pg = questions.retiredPage(exam, page, 20);
+        Set<String> mine = managed(auth);
+        if (exam != null && !exam.isBlank()) {
+            requireCanManage(auth, exam);
+        }
+        QuestionAdminService.PagedApproved pg = questions.retiredPageScoped(exam, page, 20, mine);
         model.addAttribute("rows", pg.rows());
         model.addAttribute("page", pg.page());
         model.addAttribute("totalPages", pg.totalPages());
         model.addAttribute("totalElements", pg.totalElements());
         model.addAttribute("pageSize", pg.pageSize());
         model.addAttribute("exam", exam);
-        model.addAttribute("exams", examService.listActive());
+        List<com.sfquiz.dto.ExamDto> allExams = examService.listActive();
+        model.addAttribute("exams", AuthorizationService.managesAllExams(mine)
+                ? allExams
+                : allExams.stream().filter(e -> mine.contains(e.slug())).toList());
         return "retired-questions";
     }
 
@@ -202,7 +281,10 @@ public class QuestionAdminController {
                        @RequestParam(required = false) String helpUrl,
                        @RequestParam(name = "choiceText", required = false) List<String> choiceText,
                        @RequestParam(name = "correct", required = false) List<Integer> correct,
-                       @RequestParam(name = "action", required = false) String action) {
+                       @RequestParam(name = "action", required = false) String action,
+                       Authentication auth) {
+        Question q = questions.get(id);
+        requireCanManage(auth, q);
         questions.update(id, type, text, explanation, helpUrl, choiceText, correct);
         if ("save-approve".equalsIgnoreCase(action)) {
             questions.approve(id);
