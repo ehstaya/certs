@@ -1,0 +1,64 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sfquiz-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: sfquiz
+      MYSQL_USER: sfquiz
+      MYSQL_PASSWORD: sfquiz
+    ports:
+      - "3307:3306"
+    volumes:
+      - sfquiz-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpw"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: sfquiz-mailpit
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI — http://localhost:8025
+
+  app:
+    build: .
+    container_name: sfquiz-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/sfquiz?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: sfquiz
+      SPRING_DATASOURCE_PASSWORD: sfquiz
+      SERVER_PORT: 8095
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      MAIL_AUTH: "false"
+      MAIL_STARTTLS: "false"
+      MAIL_FROM: noreply@sfquiz.local
+      APP_BASE_URL: http://localhost:8095
+      ADMIN_EMAIL: admin@local
+      ADMIN_PASSWORD: ChangeMe123!
+      ADMIN_NAME: Default Admin
+      # Extraction pipeline (Claude). Set ANTHROPIC_API_KEY in your shell or .env
+      # to enable; otherwise uploads are stored but extraction is skipped.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EXTRACTION_DAILY_BUDGET_USD: ${EXTRACTION_DAILY_BUDGET_USD:-2.0}
+    ports:
+      - "8095:8095"
+
+volumes:
+  sfquiz-db:

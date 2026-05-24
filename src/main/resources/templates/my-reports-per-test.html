@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My reports — Per-test stats</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+  <style>
+    .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 320px; background: #fff; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin" style="display:none">Users</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions for Review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree">
+    <div class="reports-tree-section">My reports</div>
+    <a href="/my/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''"><span>📊</span> Dashboard</a>
+    <div class="reports-tree-section">Per test</div>
+    <a href="/my/reports/per-test" th:classappend="${section == 'per-test'} ? 'active' : ''"><span>📋</span> Per-test stats</a>
+    <a href="/my/reports/trend" th:classappend="${section == 'trend'} ? 'active' : ''"><span>📈</span> Score trend</a>
+  </aside>
+
+  <main class="reports-content">
+    <h1>Per-test stats</h1>
+    <p class="muted">Detailed performance on one exam — questions attempted, correct vs. incorrect, time taken, attempt history.</p>
+
+    <form method="get" action="/my/reports/per-test" class="filter-bar">
+      <label>
+        <span>Exam</span>
+        <select name="exam" onchange="this.form.submit()">
+          <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}" th:selected="${ex.slug == exam}">Exam</option>
+        </select>
+      </label>
+    </form>
+
+    <section class="dashboard-cards">
+      <div class="dash-card">
+        <div class="dash-card-label">Attempts</div>
+        <div class="dash-card-value" th:text="${attemptCount}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Avg score</div>
+        <div class="dash-card-value" th:text="${attemptCount > 0 ? avgScore + '%' : '—'}">0%</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Best score</div>
+        <div class="dash-card-value" th:text="${attemptCount > 0 ? bestScore + '%' : '—'}">0%</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Passed</div>
+        <div class="dash-card-value" th:text="${passedCount + ' / ' + attemptCount}">0 / 0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Avg time per attempt</div>
+        <div class="dash-card-value" th:text="${attemptCount > 0 ? ((avgDuration / 60) + 'm ' + (avgDuration % 60) + 's') : '—'}">—</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Total questions answered</div>
+        <div class="dash-card-value" th:text="${totalQuestions}">0</div>
+        <div class="dash-card-foot">
+          <span style="color: #047857;" th:text="${totalCorrect + ' correct'}">0 correct</span> ·
+          <span style="color: #b91c1c;" th:text="${totalIncorrect + ' incorrect'}">0 incorrect</span> ·
+          <span class="muted" th:text="${totalUnanswered + ' unanswered'}">0 unanswered</span>
+        </div>
+      </div>
+    </section>
+
+    <h2>Attempt history</h2>
+    <div class="empty" th:if="${#lists.isEmpty(rows)}">No attempts on this test yet.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
+      <thead><tr><th>Finished</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr th:each="a : ${rows}">
+          <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td th:text="${a.scorePercent + '%'}">0%</td>
+          <td th:text="${a.correctCount}">0</td>
+          <td th:text="${a.incorrectCount}">0</td>
+          <td th:text="${a.unansweredCount}">0</td>
+          <td th:text="${(a.durationSeconds / 60) + 'm ' + (a.durationSeconds % 60) + 's'}">—</td>
+          <td>
+            <span th:classappend="${a.passed} ? 'pct-pill good' : 'pct-pill bad'"
+                  th:text="${a.passed} ? 'PASS' : 'FAIL'">FAIL</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "slug": "agentforce-specialist",
+  "name": "Salesforce Agentforce Specialist",
+  "description": "Build, deploy, and govern Agentforce AI agents on the Salesforce platform.",
+  "questionsPerSession": 60,
+  "durationMinutes": 105,
+  "passingScorePercent": 73,
+  "sortOrder": 40,
+  "active": true,
+  "questions": []
+}

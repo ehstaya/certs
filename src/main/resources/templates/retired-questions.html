@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Retired Questions — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .filter-bar label span { font-weight: 500; }
+    .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 280px; background: #fff; }
+    .pagination { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 14px; color: var(--gray-700, #374151); }
+    .pagination a, .pagination span { padding: 4px 10px; border-radius: 6px; }
+    .pagination a { background: var(--gray-50, #f9fafb); border: 1px solid var(--gray-200, #e5e7eb); color: var(--gray-900, #111827); text-decoration: none; }
+    .pagination a:hover { background: var(--gray-100, #f3f4f6); }
+    .pagination .current { background: var(--brand-primary, #0176D3); color: #fff; font-weight: 600; }
+    .pagination .disabled { color: var(--gray-300, #d1d5db); }
+    .q-stem { color: var(--gray-700, #374151); font-size: 13px; max-width: 480px; }
+    .q-stem .label { font-weight: 600; color: var(--gray-900, #111827); }
+    .row-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
+    .retired-by { color: var(--gray-500, #6b7280); font-size: 12px; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{
+      if(!d||!d.authenticated) return;
+      const el=document.getElementById("userBadge");
+      if(!el) return;
+      const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+      el.textContent=name+" ("+(d.role||"USER")+")";
+    });
+})();
+</script>
+
+<main class="admin-wrap">
+  <h1>Retired questions</h1>
+  <p class="muted">Questions you've pulled out of the live bank. They aren't served to learners. From here you can
+    <strong>restore</strong> a question back to the bank, <strong>edit</strong> and restore in one step, or
+    <strong>permanently delete</strong> it.<br />
+    Total retired (filter applied): <strong th:text="${totalElements}">0</strong>.</p>
+
+  <p class="banner banner-ok" th:if="${restoredId != null}">Restored question #<span th:text="${restoredId}">0</span> back to the approved bank.</p>
+  <p class="banner banner-ok" th:if="${permanentlyDeletedId != null}">Permanently deleted question #<span th:text="${permanentlyDeletedId}">0</span>.</p>
+  <p class="banner banner-ok" th:if="${param.updated}">Question updated.</p>
+
+  <form method="get" action="/admin/questions/retired" class="filter-bar">
+    <label>
+      <span>Filter by exam</span>
+      <select name="exam" onchange="this.form.submit()">
+        <option value="">— All exams —</option>
+        <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}" th:selected="${ex.slug == exam}">Exam</option>
+      </select>
+    </label>
+    <input type="hidden" name="page" value="0" />
+    <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
+  </form>
+
+  <div class="empty" th:if="${#lists.isEmpty(rows)}">No retired questions match this filter.</div>
+
+  <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
+    <thead>
+      <tr><th>#</th><th>Exam</th><th>Question</th><th>Retired by</th><th class="actions-col">Actions</th></tr>
+    </thead>
+    <tbody>
+      <tr th:each="q : ${rows}">
+        <td th:text="${q.number}">0</td>
+        <td><code th:text="${q.exam != null ? q.exam.slug : '—'}">slug</code></td>
+        <td>
+          <div class="q-stem">
+            <span class="label" th:text="${#strings.abbreviate(q.text, 180)}">…</span>
+          </div>
+        </td>
+        <td>
+          <div th:text="${q.retiredByEmail != null ? q.retiredByEmail : '—'}">admin@local</div>
+          <div class="retired-by" th:if="${q.retiredAt != null}"
+               th:text="${#temporals.format(q.retiredAt, 'yyyy-MM-dd HH:mm')}">when</div>
+        </td>
+        <td class="actions-col">
+          <div class="row-actions">
+            <form method="post" th:action="@{|/admin/questions/${q.id}/restore|}" style="display:inline">
+              <button class="btn btn-primary btn-sm" type="submit"
+                      title="Put this question back into the live bank as APPROVED.">
+                Restore
+              </button>
+            </form>
+            <a class="btn btn-sm" th:href="@{|/admin/questions/${q.id}/edit|}">Edit</a>
+            <form method="post" th:action="@{|/admin/questions/${q.id}/permanently-delete|}" style="display:inline">
+              <button class="btn btn-danger btn-sm" type="submit"
+                      th:attr="data-text=${#strings.abbreviate(q.text, 80)}"
+                      onclick="return confirm('Permanently delete this question?\n\n' + this.getAttribute('data-text') + '\n\nThis removes the row from the database. Cannot be undone.')">
+                Permanently delete
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="pagination" th:if="${totalPages > 1}">
+    <a th:if="${page > 0}" th:href="@{/admin/questions/retired(exam=${exam}, page=${page - 1})}">&laquo; Prev</a>
+    <span th:unless="${page > 0}" class="disabled">&laquo; Prev</span>
+    <span>Page <strong th:text="${page + 1}">1</strong> of <span th:text="${totalPages}">1</span></span>
+    <a th:if="${page < totalPages - 1}" th:href="@{/admin/questions/retired(exam=${exam}, page=${page + 1})}">Next &raquo;</a>
+    <span th:unless="${page < totalPages - 1}" class="disabled">Next &raquo;</span>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,115 @@
+{
+  "slug": "togaf",
+  "name": "TOGAF 9 Foundation (Part 1)",
+  "description": "Enterprise architecture fundamentals: the ADM, deliverables, the Enterprise Continuum, and core concepts.",
+  "questionsPerSession": 8,
+  "durationMinutes": 60,
+  "sortOrder": 30,
+  "questions": [
+    {
+      "n": 1,
+      "type": "SINGLE",
+      "text": "In TOGAF, what does ADM stand for?",
+      "helpUrl": "https://pubs.opengroup.org/architecture/togaf9-doc/arch/chap05.html",
+      "explanation": "The Architecture Development Method (ADM) is the core of TOGAF — a step-by-step, iterative approach to developing and managing an enterprise architecture.",
+      "choices": [
+        {"label": "A", "text": "Architecture Development Method", "correct": true},
+        {"label": "B", "text": "Application Design Model", "correct": false},
+        {"label": "C", "text": "Architecture Deployment Mechanism", "correct": false},
+        {"label": "D", "text": "Agile Delivery Methodology", "correct": false}
+      ]
+    },
+    {
+      "n": 2,
+      "type": "SINGLE",
+      "text": "Which ADM phase establishes the architecture project, obtains approvals, and defines the scope and constraints?",
+      "helpUrl": "https://pubs.opengroup.org/architecture/togaf9-doc/arch/chap06.html",
+      "explanation": "Phase A: Architecture Vision initiates an ADM cycle — it defines scope, identifies stakeholders, creates the Architecture Vision, and obtains approval to proceed.",
+      "choices": [
+        {"label": "A", "text": "Preliminary Phase", "correct": false},
+        {"label": "B", "text": "Phase A: Architecture Vision", "correct": true},
+        {"label": "C", "text": "Phase G: Implementation Governance", "correct": false},
+        {"label": "D", "text": "Phase H: Architecture Change Management", "correct": false}
+      ]
+    },
+    {
+      "n": 3,
+      "type": "SINGLE",
+      "text": "What are the four architecture domains addressed by TOGAF?",
+      "helpUrl": "https://pubs.opengroup.org/architecture/togaf9-doc/arch/chap02.html",
+      "explanation": "TOGAF addresses Business, Data, Application, and Technology architectures. Data and Application are often grouped together as the Information Systems Architectures.",
+      "choices": [
+        {"label": "A", "text": "Business, Data, Application, Technology", "correct": true},
+        {"label": "B", "text": "Strategy, People, Process, Tools", "correct": false},
+        {"label": "C", "text": "Vision, Design, Build, Run", "correct": false},
+        {"label": "D", "text": "Security, Network, Storage, Compute", "correct": false}
+      ]
+    },
+    {
+      "n": 4,
+      "type": "SINGLE",
+      "text": "Which TOGAF concept is a classification system used to organize architecture artifacts in the Architecture Repository?",
+      "helpUrl": "https://pubs.opengroup.org/architecture/togaf9-doc/arch/chap39.html",
+      "explanation": "The Enterprise Continuum provides a framework and classification for categorizing architecture and solution artifacts, ranging from generic Foundation Architectures to Organization-Specific Architectures.",
+      "choices": [
+        {"label": "A", "text": "The Enterprise Continuum", "correct": true},
+        {"label": "B", "text": "The Architecture Vision", "correct": false},
+        {"label": "C", "text": "The Statement of Architecture Work", "correct": false},
+        {"label": "D", "text": "The Request for Architecture Work", "correct": false}
+      ]
+    },
+    {
+      "n": 5,
+      "type": "SINGLE",
+      "text": "What document is the deliverable that defines the scope and approach to complete an architecture project, and is signed off by sponsors?",
+      "helpUrl": "https://pubs.opengroup.org/architecture/togaf9-doc/arch/chap36.html",
+      "explanation": "The Statement of Architecture Work defines the scope, approach, schedule, and resources for an architecture engagement and is approved by the sponsoring stakeholders.",
+      "choices": [
+        {"label": "A", "text": "Statement of Architecture Work", "correct": true},
+        {"label": "B", "text": "Architecture Definition Document", "correct": false},
+        {"label": "C", "text": "Architecture Requirements Specification", "correct": false},
+        {"label": "D", "text": "Architecture Roadmap", "correct": false}
+      ]
+    },
+    {
+      "n": 6,
+      "type": "MULTI",
+      "text": "Which TWO of the following are phases of the TOGAF ADM?",
+      "helpUrl": "https://pubs.opengroup.org/architecture/togaf9-doc/arch/chap05.html",
+      "explanation": "Phase B: Business Architecture and Phase E: Opportunities and Solutions are ADM phases. 'Architecture Marketing' and 'Vendor Selection' are not ADM phases.",
+      "choices": [
+        {"label": "A", "text": "Phase B: Business Architecture", "correct": true},
+        {"label": "B", "text": "Phase E: Opportunities and Solutions", "correct": true},
+        {"label": "C", "text": "Phase X: Architecture Marketing", "correct": false},
+        {"label": "D", "text": "Phase V: Vendor Selection", "correct": false},
+        {"label": "E", "text": "Phase Z: Decommissioning", "correct": false}
+      ]
+    },
+    {
+      "n": 7,
+      "type": "SINGLE",
+      "text": "What is the central repository of all architecture assets, including governance logs and reference models, called in TOGAF?",
+      "helpUrl": "https://pubs.opengroup.org/architecture/togaf9-doc/arch/chap41.html",
+      "explanation": "The Architecture Repository stores architecture artifacts and deliverables: the Architecture Metamodel, Landscape, Standards Information Base, Reference Library, and Governance Log.",
+      "choices": [
+        {"label": "A", "text": "Architecture Repository", "correct": true},
+        {"label": "B", "text": "Solutions Continuum", "correct": false},
+        {"label": "C", "text": "Architecture Vision", "correct": false},
+        {"label": "D", "text": "Requirements Management Register", "correct": false}
+      ]
+    },
+    {
+      "n": 8,
+      "type": "SINGLE",
+      "text": "Which ADM phase is at the center of the ADM cycle and operates throughout all phases?",
+      "helpUrl": "https://pubs.opengroup.org/architecture/togaf9-doc/arch/chap17.html",
+      "explanation": "Requirements Management sits at the center of the ADM graphic; it is a continuous process that manages architecture requirements across every phase, though it does not itself dictate priorities.",
+      "choices": [
+        {"label": "A", "text": "Requirements Management", "correct": true},
+        {"label": "B", "text": "Phase D: Technology Architecture", "correct": false},
+        {"label": "C", "text": "Phase F: Migration Planning", "correct": false},
+        {"label": "D", "text": "Preliminary Phase", "correct": false}
+      ]
+    }
+  ]
+}

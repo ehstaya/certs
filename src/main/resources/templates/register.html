@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create account — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="auth-body">
+<header class="topbar"><div class="brand">Certification Practice Playground</div></header>
+<main class="auth-wrap">
+  <section class="auth-card">
+    <h1>Create an account</h1>
+    <p class="muted">Submit your details. An admin will review and approve your request — once approved, a temporary password will be emailed to you.</p>
+
+    <div th:if="${error}" class="alert alert-error" th:text="${error}"></div>
+
+    <form method="post" action="/register" class="auth-form" autocomplete="on">
+      <label>Full name
+        <input type="text" name="fullName" th:value="${nameValue}" autocomplete="name" />
+      </label>
+      <label>Email
+        <input type="email" name="email" th:value="${emailValue}" required autofocus autocomplete="email" />
+      </label>
+      <button class="btn btn-primary btn-full" type="submit">Submit registration</button>
+    </form>
+
+    <div class="auth-links">
+      Already have an account? <a href="/login">Sign in</a>
+    </div>
+  </section>
+</main>
+</body>
+</html>

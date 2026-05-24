@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My reports — Score trend</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+  <style>
+    .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 320px; background: #fff; }
+    .trend-chart { width: 100%; max-width: 720px; background: #fff; border: 1px solid var(--gray-200, #e5e7eb); border-radius: 8px; padding: 8px; }
+    .trend-axis { stroke: var(--gray-300, #d1d5db); stroke-width: 1; }
+    .trend-tick { fill: var(--gray-500, #6b7280); font-size: 10px; }
+    .trend-pass-line { stroke: #f59e0b; stroke-width: 2; stroke-dasharray: 6 4; }
+    .trend-pass-label { fill: #92400e; font-size: 11px; font-weight: 600; }
+    .trend-line { fill: none; stroke: var(--brand-primary, #0176D3); stroke-width: 2.5; }
+    .trend-pt-pass { fill: #047857; stroke: #fff; stroke-width: 2; }
+    .trend-pt-fail { fill: #b91c1c; stroke: #fff; stroke-width: 2; }
+    .legend { display: flex; gap: 18px; font-size: 13px; color: var(--gray-700, #374151); margin: 8px 0 16px; }
+    .legend-swatch { display: inline-block; width: 12px; height: 12px; vertical-align: middle; margin-right: 6px; border-radius: 50%; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin" style="display:none">Users</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions for Review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree">
+    <div class="reports-tree-section">My reports</div>
+    <a href="/my/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''"><span>📊</span> Dashboard</a>
+    <div class="reports-tree-section">Per test</div>
+    <a href="/my/reports/per-test" th:classappend="${section == 'per-test'} ? 'active' : ''"><span>📋</span> Per-test stats</a>
+    <a href="/my/reports/trend" th:classappend="${section == 'trend'} ? 'active' : ''"><span>📈</span> Score trend</a>
+  </aside>
+
+  <main class="reports-content">
+    <h1>Score trend</h1>
+    <p class="muted">Each dot is one attempt, oldest left → newest right. Dashed amber line is the official passing score.
+      Green dots = pass, red dots = fail.</p>
+
+    <form method="get" action="/my/reports/trend" class="filter-bar">
+      <label>
+        <span>Exam</span>
+        <select name="exam" onchange="this.form.submit()">
+          <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}" th:selected="${ex.slug == exam}">Exam</option>
+        </select>
+      </label>
+    </form>
+
+    <div class="empty" th:if="${#lists.isEmpty(trend)}">No attempts on this exam yet — take a test and finish it to see the trend.</div>
+
+    <div th:unless="${#lists.isEmpty(trend)}">
+      <div class="legend">
+        <span><span class="legend-swatch" style="background:#047857"></span>Passed</span>
+        <span><span class="legend-swatch" style="background:#b91c1c"></span>Failed</span>
+        <span><span class="legend-swatch" style="background:#f59e0b"></span>Passing threshold: <strong th:text="${passingPct + '%'}">65%</strong></span>
+      </div>
+      <svg class="trend-chart" th:attr="viewBox=|0 0 ${chartW} ${chartH}|" preserveAspectRatio="xMidYMid meet">
+        <!-- Y axis ticks (0, 25, 50, 75, 100) -->
+        <g>
+          <th:block th:each="t : ${ {0,25,50,75,100} }">
+            <line class="trend-axis"
+                  th:x1="${padL}"
+                  th:attr="y1=${padT + (chartH - padT - padB) * (100 - t) / 100},y2=${padT + (chartH - padT - padB) * (100 - t) / 100}"
+                  th:x2="${chartW - padR}" />
+            <text class="trend-tick"
+                  th:x="${padL - 6}"
+                  th:y="${padT + (chartH - padT - padB) * (100 - t) / 100 + 4}"
+                  text-anchor="end"
+                  th:text="${t + '%'}">0%</text>
+          </th:block>
+        </g>
+        <!-- Passing-score reference line -->
+        <line class="trend-pass-line"
+              th:x1="${padL}"
+              th:x2="${chartW - padR}"
+              th:y1="${passY}"
+              th:y2="${passY}" />
+        <text class="trend-pass-label"
+              th:x="${chartW - padR - 90}"
+              th:y="${passY - 6}"
+              th:text="${'Pass: ' + passingPct + '%'}">Pass: 65%</text>
+        <!-- The score line -->
+        <polyline class="trend-line" th:attr="points=${polyPoints}" />
+        <!-- Per-attempt dots -->
+        <g>
+          <circle th:each="c : ${circles}"
+                  th:cx="${c[0]}" th:cy="${c[1]}" r="5"
+                  th:attr="class=${c[3] == 1 ? 'trend-pt-pass' : 'trend-pt-fail'}">
+            <title th:text="${c[2] + '%'}">0%</title>
+          </circle>
+        </g>
+      </svg>
+
+      <h2>Each attempt</h2>
+      <table class="admin-table">
+        <thead><tr><th>#</th><th>Finished</th><th>Score</th><th>Result</th><th>Time</th></tr></thead>
+        <tbody>
+          <tr th:each="a, it : ${trend}">
+            <td th:text="${it.index + 1}">1</td>
+            <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+            <td th:text="${a.scorePercent + '%'}">0%</td>
+            <td>
+              <span th:classappend="${a.passed} ? 'pct-pill good' : 'pct-pill bad'"
+                    th:text="${a.passed} ? 'PASS' : 'FAIL'">FAIL</span>
+            </td>
+            <td th:text="${(a.durationSeconds / 60) + 'm ' + (a.durationSeconds % 60) + 's'}">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>

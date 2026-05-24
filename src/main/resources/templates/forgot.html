@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Forgot password — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="auth-body">
+<header class="topbar"><div class="brand">Certification Practice Playground</div></header>
+<main class="auth-wrap">
+  <section class="auth-card">
+    <h1>Forgot password</h1>
+    <p class="muted">Enter your email and we'll send you a link to reset your password.</p>
+
+    <div th:if="${info}" class="alert alert-info" th:text="${info}"></div>
+    <div th:if="${error}" class="alert alert-error" th:text="${error}"></div>
+
+    <form method="post" action="/forgot-password" class="auth-form">
+      <label>Email
+        <input type="email" name="email" required autofocus autocomplete="email" />
+      </label>
+      <button class="btn btn-primary btn-full" type="submit">Send reset link</button>
+    </form>
+
+    <div class="auth-links">
+      <a href="/login">Back to sign in</a>
+    </div>
+  </section>
+</main>
+</body>
+</html>

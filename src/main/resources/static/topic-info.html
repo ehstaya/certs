@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exam topic mix — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .topic-wrap { max-width: 880px; margin: 32px auto; padding: 0 16px; }
+    .topic-card { background: #fff; border: 1px solid var(--gray-200, #e5e7eb); border-radius: 12px; padding: 28px 32px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+    .topic-card h1 { margin: 0 0 4px 0; font-size: 22px; color: var(--brand-navy, #032D60); }
+    .topic-card .topic-sub { color: var(--gray-700, #374151); margin: 0 0 24px 0; font-size: 14px; }
+    .topic-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px 18px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--gray-100, #f3f4f6); }
+    .topic-row:last-of-type { border-bottom: none; }
+    .topic-name { font-weight: 500; color: var(--gray-900, #111827); }
+    .topic-weight { font-variant-numeric: tabular-nums; color: var(--brand-primary, #0176D3); font-weight: 600; min-width: 56px; text-align: right; }
+    .topic-share { font-size: 13px; color: var(--gray-500, #6b7280); min-width: 92px; text-align: right; }
+    .topic-bar { grid-column: 1 / -1; height: 6px; background: var(--gray-100, #f3f4f6); border-radius: 3px; overflow: hidden; margin-top: 2px; }
+    .topic-bar > span { display: block; height: 100%; background: var(--brand-primary, #0176D3); }
+    .topic-meta { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--gray-200, #e5e7eb); display: flex; gap: 32px; flex-wrap: wrap; color: var(--gray-700, #374151); font-size: 14px; }
+    .topic-meta strong { color: var(--gray-900, #111827); }
+    .topic-actions { display: flex; gap: 12px; margin-top: 28px; justify-content: flex-end; }
+    .topic-empty { color: var(--gray-500, #6b7280); font-style: italic; padding: 24px 0; text-align: center; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions" id="topbarActions">
+    <a class="topbar-link" href="/exams.html">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin" style="display:none">Users</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions for Review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+
+<main class="topic-wrap">
+  <div class="topic-card">
+    <h1 id="examName">Loading…</h1>
+    <p class="topic-sub" id="examSub">Topic weightage for your next practice session.</p>
+
+    <div id="topicList"></div>
+    <p class="topic-empty" id="emptyMsg" style="display:none">
+      No topic mix defined for this exam yet — sessions will sample uniformly across the question bank.
+    </p>
+
+    <div class="topic-meta">
+      <div>Questions per session: <strong id="perSession">—</strong></div>
+      <div>Timer: <strong id="duration">—</strong></div>
+      <div>Passing score: <strong id="passingScore">—</strong></div>
+    </div>
+
+    <div class="topic-actions">
+      <a class="btn" href="/exams.html">Back</a>
+      <a class="btn btn-primary" id="startBtn" href="#">Start test →</a>
+    </div>
+  </div>
+</main>
+
+<script>
+(async function () {
+  const params = new URLSearchParams(window.location.search);
+  const slug = params.get("exam");
+  if (!slug) { window.location.href = "/exams.html"; return; }
+
+  const startBtn = document.getElementById("startBtn");
+  startBtn.href = "/index.html?exam=" + encodeURIComponent(slug);
+
+  try {
+    const meRes = await fetch("/api/me", { credentials: "same-origin" });
+    if (meRes.ok) {
+      const me = await meRes.json();
+      if (!me.authenticated) { window.location.href = "/login"; return; }
+      const name = me.fullName && me.fullName.trim() ? me.fullName : me.email;
+      const role = me.role || "USER";
+      const badge = document.getElementById("userBadge");
+      if (badge) badge.textContent = name + " (" + role + ")";
+      if (role === "ADMIN") {
+        document.querySelectorAll(".admin-only").forEach(el => { el.style.display = ""; });
+      }
+    }
+
+    const examsRes = await fetch("/api/exams", { credentials: "same-origin" });
+    const exams = examsRes.ok ? await examsRes.json() : [];
+    const exam = exams.find(e => e.slug === slug);
+    if (exam) {
+      document.getElementById("examName").textContent = exam.name;
+      document.getElementById("perSession").textContent = exam.questionsPerSession + " questions";
+      document.getElementById("duration").textContent = exam.durationMinutes + " min";
+      document.getElementById("passingScore").textContent = (exam.passingScorePercent || 65) + "%";
+    } else {
+      document.getElementById("examName").textContent = slug;
+      document.getElementById("passingScore").textContent = "65%";
+    }
+
+    const tRes = await fetch("/api/exams/" + encodeURIComponent(slug) + "/topics", { credentials: "same-origin" });
+    const topics = tRes.ok ? await tRes.json() : [];
+    const list = document.getElementById("topicList");
+    if (!topics.length) {
+      document.getElementById("emptyMsg").style.display = "";
+    } else {
+      const maxWeight = Math.max(...topics.map(t => t.weightPercent));
+      topics.forEach(t => {
+        const row = document.createElement("div");
+        row.className = "topic-row";
+        const name = document.createElement("div");
+        name.className = "topic-name";
+        name.textContent = t.name;
+        const weight = document.createElement("div");
+        weight.className = "topic-weight";
+        weight.textContent = t.weightPercent + "%";
+        const share = document.createElement("div");
+        share.className = "topic-share";
+        share.textContent = "~" + t.questionsForSession + " of " + (exam ? exam.questionsPerSession : "?") + " Qs";
+        const bar = document.createElement("div");
+        bar.className = "topic-bar";
+        const fill = document.createElement("span");
+        fill.style.width = ((t.weightPercent / maxWeight) * 100).toFixed(1) + "%";
+        bar.appendChild(fill);
+        row.appendChild(name);
+        row.appendChild(weight);
+        row.appendChild(share);
+        row.appendChild(bar);
+        list.appendChild(row);
+      });
+    }
+  } catch (e) {
+    document.getElementById("examSub").textContent = "Couldn't load topic info: " + e.message;
+  }
+})();
+</script>
+</body>
+</html>

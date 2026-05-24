@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Edit Question — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .form-row { margin-bottom: 14px; }
+    .form-row label { display: block; font-weight: 600; margin-bottom: 4px; }
+    .form-row input[type=text], .form-row textarea, .form-row select { width: 100%; padding: 8px; border: 1px solid var(--gray-200, #e5e7eb); border-radius: 6px; font: inherit; }
+    .form-row textarea { min-height: 80px; }
+    .choice-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+    .choice-row .lab { width: 1.5rem; font-weight: 600; }
+    .choice-row input[type=text] { flex: 1; }
+    .hint { font-size: .85rem; color: var(--gray-500, #6b7280); }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{
+      if(!d||!d.authenticated) return;
+      const el=document.getElementById("userBadge");
+      if(!el) return;
+      const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+      el.textContent=name+" ("+(d.role||"USER")+")";
+    });
+})();
+</script>
+
+<main class="admin-wrap">
+  <h1>Edit question #<span th:text="${q.number}">0</span>
+    <span th:if="${q.exam != null}" class="q-exam-pill"
+          style="font-size: 14px; background: var(--brand-tint, #EAF5FE); color: var(--brand-navy, #032D60); padding: 3px 10px; border-radius: 999px; margin-left: 8px;"
+          th:text="${q.exam.name}">Exam name</span>
+  </h1>
+  <p class="hint">Status: <strong th:text="${q.status}">PENDING</strong>.</p>
+  <p class="hint" th:if="${q.status.name() == 'APPROVED'}" style="background: #fff3cd; border-left: 3px solid #f0ad4e; padding: 8px 12px; border-radius: 4px;">
+    ⚠ This question is currently <strong>live in the bank</strong>. Saving will move it back to the
+    <strong>Pending review queue</strong> so an admin can re-approve it — matches the same flow as user-uploaded questions.
+  </p>
+
+  <form method="post" th:action="@{|/admin/questions/${q.id}/edit|}">
+    <div class="form-row">
+      <label for="type">Type</label>
+      <select id="type" name="type">
+        <option value="SINGLE" th:selected="${q.type.name() == 'SINGLE'}">SINGLE (one correct answer)</option>
+        <option value="MULTI" th:selected="${q.type.name() == 'MULTI'}">MULTI (one or more correct answers)</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label for="text">Question text</label>
+      <textarea id="text" name="text" th:text="${q.text}"></textarea>
+    </div>
+
+    <div class="form-row">
+      <label>Choices &amp; correct answer(s)</label>
+      <p class="hint">Check the box for each correct choice. For a SINGLE question, check exactly one. Leave a row blank to drop it; fill a blank row to add a choice. Labels (A, B, …) are reassigned automatically on save.</p>
+      <div id="choicesList">
+        <div class="choice-row" th:each="c, it : ${q.choices}">
+          <input type="checkbox" name="correct" th:value="${it.index}" th:checked="${c.correct}" />
+          <span class="lab" th:text="${c.label}">A</span>
+          <input type="text" name="choiceText" th:value="${c.text}" />
+        </div>
+        <!-- two spare blank rows for adding choices; JS can add more -->
+        <div class="choice-row">
+          <input type="checkbox" name="correct" th:value="${#lists.size(q.choices)}" />
+          <span class="lab">+</span>
+          <input type="text" name="choiceText" value="" placeholder="(add a new choice)" />
+        </div>
+        <div class="choice-row">
+          <input type="checkbox" name="correct" th:value="${#lists.size(q.choices) + 1}" />
+          <span class="lab">+</span>
+          <input type="text" name="choiceText" value="" placeholder="(add another choice)" />
+        </div>
+      </div>
+      <button class="btn btn-sm" type="button" id="addChoiceBtn" style="margin-top:6px">+ Add another choice</button>
+    </div>
+
+    <div class="form-row">
+      <label for="explanation">Explanation (shown after answering)</label>
+      <textarea id="explanation" name="explanation" th:text="${q.explanation}"></textarea>
+    </div>
+
+    <div class="form-row">
+      <label for="helpUrl">Help URL (optional)</label>
+      <input type="text" id="helpUrl" name="helpUrl" th:value="${q.helpUrl}" />
+    </div>
+
+    <div class="form-row">
+      <button class="btn btn-primary" type="submit" name="action" value="save">Save</button>
+      <button class="btn btn-primary" type="submit" name="action" value="save-approve"
+              th:if="${q.status.name() == 'PENDING'}"
+              title="Save edits and approve the question in one step"
+              style="margin-left:8px">Save &amp; approve</button>
+      <button class="btn btn-primary" type="submit" name="action" value="save-restore"
+              th:if="${q.status.name() == 'RETIRED'}"
+              title="Save edits and restore the question to the live bank"
+              style="margin-left:8px">Save &amp; restore</button>
+      <a class="btn btn-sm" href="/admin/questions" style="margin-left:8px">Cancel</a>
+    </div>
+  </form>
+
+  <!-- Bottom-of-page destructive action — behavior depends on current status:
+       APPROVED → soft delete (moves to retired queue)
+       RETIRED  → hard delete (permanent removal from the DB) -->
+  <div th:if="${q.status.name() == 'APPROVED'}" style="margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--gray-200, #e5e7eb);">
+    <form method="post" th:action="@{|/admin/questions/${q.id}/delete|}" style="display:inline">
+      <input type="hidden" name="returnTo" value="/admin/questions/approved" />
+      <button class="btn btn-danger btn-sm" type="submit"
+              onclick="return confirm('Move this question to the retired queue?\n\nIt will be hidden from the live quiz but you can restore or permanently delete it later from /admin/questions/retired.')">
+        Retire this question
+      </button>
+      <span class="hint" style="margin-left:8px">Soft delete — hides from learners but you can restore later.</span>
+    </form>
+  </div>
+  <div th:if="${q.status.name() == 'RETIRED'}" style="margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--gray-200, #e5e7eb);">
+    <form method="post" th:action="@{|/admin/questions/${q.id}/permanently-delete|}" style="display:inline">
+      <button class="btn btn-danger btn-sm" type="submit"
+              onclick="return confirm('Permanently delete this retired question?\n\nThis removes the row from the database. Cannot be undone.')">
+        Permanently delete
+      </button>
+      <span class="hint" style="margin-left:8px">Hard delete — row + choices gone from the DB.</span>
+    </form>
+  </div>
+</main>
+
+<script>
+(function () {
+  const list = document.getElementById("choicesList");
+  const addBtn = document.getElementById("addChoiceBtn");
+  if (!list || !addBtn) return;
+  addBtn.addEventListener("click", function () {
+    const idx = list.querySelectorAll(".choice-row").length;
+    const row = document.createElement("div");
+    row.className = "choice-row";
+    row.innerHTML =
+      '<input type="checkbox" name="correct" value="' + idx + '" />' +
+      '<span class="lab">+</span>' +
+      '<input type="text" name="choiceText" value="" placeholder="(new choice)" />';
+    list.appendChild(row);
+    row.querySelector('input[type="text"]').focus();
+  });
+})();
+</script>
+</body>
+</html>

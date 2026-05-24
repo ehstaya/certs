@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports — All-user scores</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+  <style>
+    .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 220px; background: #fff; }
+    .role-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-size: 11px; letter-spacing: 0.3px; }
+    .role-pill.USER     { background: #e0f2fe; color: #075985; }
+    .role-pill.VERIFIER { background: #fef3c7; color: #92400e; }
+    .role-pill.ADMIN    { background: #ede9fe; color: #5b21b6; }
+    .score-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .score-pill.pass { background: #d1fae5; color: #065f46; }
+    .score-pill.fail { background: #fee2e2; color: #991b1b; }
+    .score-pill.mid  { background: #fef3c7; color: #92400e; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .summary-card  { padding: 14px 16px; border-radius: 10px; background: #f9fafb; border: 1px solid var(--gray-200, #e5e7eb); }
+    .summary-card-label { font-size: 12px; color: var(--gray-500, #6b7280); text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-card-value { font-size: 22px; font-weight: 700; color: var(--gray-900, #111827); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree" aria-label="Reports navigation">
+    <div class="reports-tree-section">Reports</div>
+    <a href="/admin/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''"><span aria-hidden="true">📊</span> Dashboard</a>
+    <div class="reports-tree-section">People</div>
+    <a href="/admin/reports/scores" th:classappend="${section == 'scores'} ? 'active' : ''"><span aria-hidden="true">🎯</span> All-user scores</a>
+    <div class="reports-tree-section">Quality</div>
+    <a href="/admin/reports/quality" th:classappend="${section == 'quality'} ? 'active' : ''"><span aria-hidden="true">👍</span> Question quality</a>
+    <a href="/admin/reports/verifier-feedback" th:classappend="${section == 'verifier-feedback'} ? 'active' : ''"><span aria-hidden="true">📝</span> Verifier feedback</a>
+  </aside>
+
+  <main class="reports-content">
+    <h1>All-user scores</h1>
+    <p class="muted">Aggregated test-attempt scores for every user — including verifiers and other admins. One row per (user, exam) pair.
+      Use the filters to drill in by role or exam.</p>
+
+    <form method="get" action="/admin/reports/scores" class="filter-bar">
+      <label>
+        <span>Role</span>
+        <select name="role" onchange="this.form.submit()">
+          <option value=""         th:selected="${role == ''}">— All roles —</option>
+          <option value="USER"     th:selected="${role == 'USER'}">User</option>
+          <option value="VERIFIER" th:selected="${role == 'VERIFIER'}">Verifier</option>
+          <option value="ADMIN"    th:selected="${role == 'ADMIN'}">Admin</option>
+        </select>
+      </label>
+      <label>
+        <span>Exam</span>
+        <select name="exam" onchange="this.form.submit()">
+          <option value="" th:selected="${exam == ''}">— All exams —</option>
+          <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}" th:selected="${ex.slug == exam}">Exam</option>
+        </select>
+      </label>
+    </form>
+
+    <section class="summary-cards" th:unless="${#lists.isEmpty(rows)}">
+      <div class="summary-card">
+        <div class="summary-card-label">Rows shown</div>
+        <div class="summary-card-value" th:text="${#lists.size(rows)}">0</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-label">Total attempts</div>
+        <div class="summary-card-value"
+             th:text="${#aggregates.sum(rows.![attempts])}">0</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-label">Distinct users</div>
+        <div class="summary-card-value"
+             th:text="${#sets.size(rows.![userId])}">0</div>
+      </div>
+    </section>
+
+    <div class="empty" th:if="${#lists.isEmpty(rows)}">
+      No test attempts match the current filters. Adjust the role / exam filters above, or wait for users to finish a practice test.
+    </div>
+
+    <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Role</th>
+          <th>Exam</th>
+          <th class="num">Attempts</th>
+          <th class="num">Avg %</th>
+          <th class="num">Best %</th>
+          <th class="num">Passes</th>
+          <th class="num">Pass rate</th>
+          <th>Last attempt</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="r : ${rows}">
+          <td>
+            <div th:text="${r.fullName != null and !#strings.isEmpty(r.fullName)} ? ${r.fullName} : ${r.email}">Name</div>
+            <div class="muted" style="font-size:12px"
+                 th:if="${r.fullName != null and !#strings.isEmpty(r.fullName)}"
+                 th:text="${r.email}">email</div>
+          </td>
+          <td>
+            <span class="role-pill"
+                  th:classappend="${r.role.name()}"
+                  th:text="${r.role.name()}">USER</span>
+          </td>
+          <td>
+            <div th:text="${r.examName}">Exam</div>
+            <div class="muted" style="font-size:12px"><code th:text="${r.examSlug}">slug</code></div>
+          </td>
+          <td class="num" th:text="${r.attempts}">0</td>
+          <td class="num">
+            <span class="score-pill"
+                  th:classappend="${r.avgScorePercent >= r.passingScorePercent} ? 'pass' : (${r.avgScorePercent >= r.passingScorePercent - 10} ? 'mid' : 'fail')"
+                  th:text="${r.avgScorePercent} + '%'">0%</span>
+          </td>
+          <td class="num">
+            <span class="score-pill"
+                  th:classappend="${r.bestScorePercent >= r.passingScorePercent} ? 'pass' : (${r.bestScorePercent >= r.passingScorePercent - 10} ? 'mid' : 'fail')"
+                  th:text="${r.bestScorePercent} + '%'">0%</span>
+          </td>
+          <td class="num" th:text="${r.passCount}">0</td>
+          <td class="num" th:text="${r.passRatePercent()} + '%'">0%</td>
+          <td th:text="${r.lastAttemptAt != null} ? ${#temporals.format(r.lastAttemptAt, 'yyyy-MM-dd HH:mm')} : '—'">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</div>
+</body>
+</html>

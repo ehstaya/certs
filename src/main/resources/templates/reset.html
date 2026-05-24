@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reset password — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="auth-body">
+<header class="topbar"><div class="brand">Certification Practice Playground</div></header>
+<main class="auth-wrap">
+  <section class="auth-card">
+    <h1>Set a new password</h1>
+    <p class="muted">Choose a new password (at least 8 characters).</p>
+
+    <div th:if="${error}" class="alert alert-error" th:text="${error}"></div>
+
+    <form method="post" action="/reset-password" class="auth-form" autocomplete="off">
+      <input type="hidden" name="token" th:value="${token}" />
+      <label>New password
+        <input type="password" name="newPassword" required minlength="8" autofocus autocomplete="new-password" />
+      </label>
+      <label>Confirm new password
+        <input type="password" name="confirmPassword" required minlength="8" autocomplete="new-password" />
+      </label>
+      <button class="btn btn-primary btn-full" type="submit">Update password</button>
+    </form>
+
+    <div class="auth-links">
+      <a href="/login">Back to sign in</a>
+    </div>
+  </section>
+</main>
+</body>
+</html>

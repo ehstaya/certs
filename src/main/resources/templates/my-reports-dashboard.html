@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My reports — Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin" style="display:none">Users</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions for Review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree" aria-label="My reports navigation">
+    <div class="reports-tree-section">My reports</div>
+    <a href="/my/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''">
+      <span aria-hidden="true">📊</span> Dashboard
+    </a>
+    <div class="reports-tree-section">Per test</div>
+    <a href="/my/reports/per-test" th:classappend="${section == 'per-test'} ? 'active' : ''">
+      <span aria-hidden="true">📋</span> Per-test stats
+    </a>
+    <a href="/my/reports/trend" th:classappend="${section == 'trend'} ? 'active' : ''">
+      <span aria-hidden="true">📈</span> Score trend
+    </a>
+  </aside>
+
+  <main class="reports-content">
+    <h1>My dashboard</h1>
+    <p class="muted">Your practice activity across every test you've taken.</p>
+
+    <section class="dashboard-cards">
+      <div class="dash-card">
+        <div class="dash-card-label">Total attempts</div>
+        <div class="dash-card-value" th:text="${totalAttempts}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Times passed</div>
+        <div class="dash-card-value" style="color: #047857;" th:text="${totalPassed}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Avg score (all exams)</div>
+        <div class="dash-card-value">
+          <span th:text="${totalAttempts > 0 ? overallAvgScore + '%' : '—'}">0%</span>
+        </div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Tests practiced</div>
+        <div class="dash-card-value" th:text="${#lists.size(summary)}">0</div>
+      </div>
+    </section>
+
+    <h2>Per-test summary</h2>
+    <div class="empty" th:if="${#lists.isEmpty(summary)}">No test attempts recorded yet. Take a test from the
+      <a href="/">Exams page</a> and finish it to see your stats here.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(summary)}">
+      <thead><tr><th>Exam</th><th>Attempts</th><th>Avg score</th><th>Best</th><th>Pass threshold</th><th>Passed</th><th>Open</th></tr></thead>
+      <tbody>
+        <tr th:each="s : ${summary}">
+          <td th:text="${s.name}">Exam name</td>
+          <td th:text="${s.attempts}">0</td>
+          <td>
+            <span th:classappend="${s.averageScore >= s.passingScorePercent} ? 'pct-pill good' : 'pct-pill bad'"
+                  th:text="${s.averageScore + '%'}">0%</span>
+          </td>
+          <td th:text="${s.bestScore + '%'}">0%</td>
+          <td th:text="${s.passingScorePercent + '%'}">65%</td>
+          <td th:text="${s.passed + ' / ' + s.attempts}">0 / 0</td>
+          <td>
+            <a class="btn btn-sm" th:href="@{/my/reports/per-test(exam=${s.slug})}">Details</a>
+            <a class="btn btn-sm" th:href="@{/my/reports/trend(exam=${s.slug})}">Trend</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Recent attempts</h2>
+    <table class="admin-table" th:unless="${#lists.isEmpty(recent)}">
+      <thead><tr><th>When</th><th>Exam</th><th>Score</th><th>Result</th><th>Time</th></tr></thead>
+      <tbody>
+        <tr th:each="a : ${recent}">
+          <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td th:text="${a.exam.name}">Exam</td>
+          <td th:text="${a.scorePercent + '%'}">0%</td>
+          <td>
+            <span th:classappend="${a.passed} ? 'pct-pill good' : 'pct-pill bad'"
+                  th:text="${a.passed} ? 'PASS' : 'FAIL'">FAIL</span>
+          </td>
+          <td th:text="${(a.durationSeconds / 60) + 'm ' + (a.durationSeconds % 60) + 's'}">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</div>
+</body>
+</html>

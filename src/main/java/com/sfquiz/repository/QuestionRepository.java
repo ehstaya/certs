@@ -1,0 +1,49 @@
+package com.sfquiz.repository;
+
+import com.sfquiz.entity.Exam;
+import com.sfquiz.entity.Question;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+import java.util.Optional;
+
+public interface QuestionRepository extends JpaRepository<Question, Long> {
+
+    Question findByExamAndNumber(Exam exam, Integer number);
+
+    List<Question> findByExamSlugAndStatusOrderByNumber(String slug, Question.Status status);
+
+    List<Question> findByExamAndStatusAndTopic(Exam exam, Question.Status status, String topic);
+
+    List<Question> findByExamAndStatusAndTopicIsNull(Exam exam, Question.Status status);
+
+    List<Question> findByStatusOrderByNumber(Question.Status status);
+
+    long countByStatus(Question.Status status);
+
+    long countByExamAndStatus(Exam exam, Question.Status status);
+
+    Optional<Question> findFirstByExamOrderByNumberDesc(Exam exam);
+
+    boolean existsByExamAndText(Exam exam, String text);
+
+    /** All non-rejected questions for an exam — used by the service-side
+     *  normalized-text dedup check at import time. Cheap because the bank is
+     *  capped at a few thousand rows per exam. */
+    @Query("SELECT q FROM Question q WHERE q.exam = :exam " +
+           "AND q.status <> com.sfquiz.entity.Question.Status.REJECTED")
+    List<Question> findAllActiveByExam(@Param("exam") Exam exam);
+
+    /** Backfill a status onto rows that predate the `status` column (used on startup). */
+    @Modifying
+    @Query("UPDATE Question q SET q.status = ?1 WHERE q.status IS NULL")
+    int backfillStatus(Question.Status status);
+
+    /** Assign exam-less questions (predating the exam column) to a default exam. */
+    @Modifying
+    @Query("UPDATE Question q SET q.exam = :exam WHERE q.exam IS NULL")
+    int backfillExam(@Param("exam") Exam exam);
+}

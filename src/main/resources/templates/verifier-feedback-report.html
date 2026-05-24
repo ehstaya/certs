@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports — Verifier feedback</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+  <style>
+    .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 320px; background: #fff; }
+    .vote-up-row td   { background: rgba(209, 250, 229, 0.4); }
+    .vote-down-row td { background: rgba(254, 226, 226, 0.4); }
+    .vote-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-size: 12px; }
+    .vote-pill.up   { background: #d1fae5; color: #065f46; }
+    .vote-pill.down { background: #fee2e2; color: #991b1b; }
+    .reason-text { font-style: italic; color: var(--gray-900, #111827); }
+    .q-snippet { font-size: 13px; color: var(--gray-700, #374151); max-width: 460px; }
+    .row-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree">
+    <div class="reports-tree-section">Reports</div>
+    <a href="/admin/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''"><span>📊</span> Dashboard</a>
+    <div class="reports-tree-section">People</div>
+    <a href="/admin/reports/scores" th:classappend="${section == 'scores'} ? 'active' : ''"><span>🎯</span> All-user scores</a>
+    <div class="reports-tree-section">Quality</div>
+    <a href="/admin/reports/quality" th:classappend="${section == 'quality'} ? 'active' : ''"><span>👍</span> Question quality</a>
+    <a href="/admin/reports/verifier-feedback" th:classappend="${section == 'verifier-feedback'} ? 'active' : ''"><span>📝</span> Verifier feedback</a>
+  </aside>
+
+  <main class="reports-content">
+    <h1>Verifier feedback</h1>
+    <p class="muted">Every vote that came with a written reason — typically from verifier-role users (forced to supply one).
+      Use this to decide whether to <strong>retire</strong> a flagged question or <strong>send it back to the review queue</strong>
+      for an admin to re-validate. Questions stay in the live bank until you retire them.</p>
+
+    <form method="get" action="/admin/reports/verifier-feedback" class="filter-bar">
+      <label>
+        <span>Exam</span>
+        <select name="exam" onchange="this.form.submit()">
+          <option value="">— All exams —</option>
+          <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}" th:selected="${ex.slug == exam}">Exam</option>
+        </select>
+      </label>
+    </form>
+
+    <div class="empty" th:if="${#lists.isEmpty(rows)}">
+      No reasoned votes yet. Verifiers will populate this once they start rating questions.
+    </div>
+
+    <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Exam</th>
+          <th>Q#</th>
+          <th>Question</th>
+          <th>Vote</th>
+          <th>Reason</th>
+          <th>Voter</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="r : ${rows}" th:classappend="${r.voteValue > 0} ? 'vote-up-row' : 'vote-down-row'">
+          <td th:text="${#temporals.format(r.votedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td><code th:text="${r.examSlug}">slug</code></td>
+          <td th:text="${r.questionNumber}">0</td>
+          <td>
+            <div class="q-snippet" th:text="${#strings.abbreviate(r.questionText, 200)}">…</div>
+          </td>
+          <td>
+            <span th:classappend="${r.voteValue > 0} ? 'vote-pill up' : 'vote-pill down'"
+                  th:text="${r.voteValue > 0} ? '👍 up' : '👎 down'">vote</span>
+          </td>
+          <td class="reason-text" th:text="${r.reason}">reason</td>
+          <td th:text="${r.voterEmail}">voter</td>
+          <td class="actions-col">
+            <div class="row-actions">
+              <a class="btn btn-sm" th:href="@{|/admin/questions/${r.questionId}/edit|}" title="Open the question editor">Edit</a>
+              <form method="post" th:action="@{|/admin/questions/${r.questionId}/delete|}" style="display:inline">
+                <input type="hidden" name="returnTo" value="/admin/reports/verifier-feedback" />
+                <button class="btn btn-danger btn-sm" type="submit"
+                        onclick="return confirm('Retire this question?\n\nIt will be hidden from learners but you can restore or permanently delete it later from the Retired queue.')">
+                  Retire
+                </button>
+              </form>
+              <form method="post" th:action="@{|/admin/questions/${r.questionId}/send-back|}" style="display:inline">
+                <input type="hidden" name="returnTo" value="/admin/reports/verifier-feedback" />
+                <button class="btn btn-warning btn-sm" type="submit"
+                        onclick="return confirm('Send this question back to the review queue for the domain admin to re-check?')">
+                  Send back
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Internal agent — runs inside the Salesforce network. Reads Google Drive / a
+# local folder, runs the quality gate, and pushes questions to the quiz app.
+# Does NO web crawling. (Semantic dedup's torch dependency is intentionally NOT
+# installed here to keep the image small — add `.[internal,dedup]` if you need
+# `--semantic-dedup`.)
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY crawler ./crawler
+RUN pip install --no-cache-dir ".[internal]"
+
+# Persistent data: SQLite question DB, fetch cache, audit logs. Mount a volume here.
+RUN mkdir -p /data/cache /data/logs
+ENV DB_PATH=/data/questions.db \
+    CACHE_DIR=/data/cache \
+    LOGS_DIR=/data/logs
+
+ENTRYPOINT ["python", "-m", "crawler.internal"]
+CMD ["--help"]

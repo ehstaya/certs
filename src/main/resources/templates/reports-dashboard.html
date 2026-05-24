@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports — Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree" aria-label="Reports navigation">
+    <div class="reports-tree-section">Reports</div>
+    <a href="/admin/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''">
+      <span aria-hidden="true">📊</span> Dashboard
+    </a>
+    <div class="reports-tree-section">People</div>
+    <a href="/admin/reports/scores" th:classappend="${section == 'scores'} ? 'active' : ''">
+      <span aria-hidden="true">🎯</span> All-user scores
+    </a>
+    <div class="reports-tree-section">Quality</div>
+    <a href="/admin/reports/quality" th:classappend="${section == 'quality'} ? 'active' : ''">
+      <span aria-hidden="true">👍</span> Question quality
+    </a>
+    <a href="/admin/reports/verifier-feedback" th:classappend="${section == 'verifier-feedback'} ? 'active' : ''">
+      <span aria-hidden="true">📝</span> Verifier feedback
+    </a>
+    <!-- Drop additional reports here as we build them. -->
+  </aside>
+
+  <main class="reports-content">
+    <h1>Dashboard</h1>
+    <p class="muted">Platform overview. Pick a detailed report from the left.</p>
+
+    <section class="dashboard-cards">
+      <div class="dash-card">
+        <div class="dash-card-label">Active exams</div>
+        <div class="dash-card-value" th:text="${stats.activeExams}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Approved questions</div>
+        <div class="dash-card-value" th:text="${stats.approvedQuestions}">0</div>
+        <div class="dash-card-foot">In the live bank</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Pending review</div>
+        <div class="dash-card-value" th:text="${stats.pendingQuestions}">0</div>
+        <div class="dash-card-foot">
+          <a href="/admin/questions">Review queue →</a>
+        </div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Retired</div>
+        <div class="dash-card-value" th:text="${stats.retiredQuestions}">0</div>
+        <div class="dash-card-foot">
+          <a href="/admin/questions/retired">Retired queue →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard-cards">
+      <div class="dash-card">
+        <div class="dash-card-label">All-user scores</div>
+        <div class="dash-card-value" style="font-size: 22px;">🎯</div>
+        <div class="dash-card-foot">
+          <a href="/admin/reports/scores">View scores for all users →</a>
+        </div>
+      </div>
+    </section>
+
+    <h2>Vote signal</h2>
+    <section class="dashboard-cards">
+      <div class="dash-card">
+        <div class="dash-card-label">Total votes</div>
+        <div class="dash-card-value" th:text="${stats.totalVotes}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">👍 Thumbs up</div>
+        <div class="dash-card-value" style="color: #047857;" th:text="${stats.thumbsUp}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">👎 Thumbs down</div>
+        <div class="dash-card-value" style="color: #b91c1c;" th:text="${stats.thumbsDown}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">% Positive overall</div>
+        <div class="dash-card-value">
+          <span th:text="${stats.totalVotes > 0 ? stats.overallPercentUp + '%' : '—'}">0%</span>
+        </div>
+        <div class="dash-card-foot">
+          <a href="/admin/reports/quality">Drill down →</a>
+        </div>
+      </div>
+    </section>
+
+    <h2>Per-exam snapshot</h2>
+    <div class="empty" th:if="${#lists.isEmpty(perExam)}">No active exams yet.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(perExam)}">
+      <thead><tr><th>Exam</th><th>Total votes</th><th>👍</th><th>👎</th><th>% positive</th><th></th></tr></thead>
+      <tbody>
+        <tr th:each="r : ${perExam}">
+          <td><code th:text="${r.slug}">slug</code></td>
+          <td th:text="${r.totalVotes}">0</td>
+          <td th:text="${r.up}">0</td>
+          <td th:text="${r.down}">0</td>
+          <td>
+            <span th:classappend="${r.approxPercentUp >= 75} ? 'pct-pill good' : (${r.approxPercentUp >= 50} ? 'pct-pill mid' : 'pct-pill bad')"
+                  th:text="${r.totalVotes > 0 ? r.approxPercentUp + '%' : '—'}">0%</span>
+          </td>
+          <td><a class="btn btn-sm" th:href="@{/admin/reports/quality(exam=${r.slug})}">Open report →</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</div>
+</body>
+</html>

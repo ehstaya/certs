@@ -1,0 +1,80 @@
+Salesforce Admin Quiz — Demo Run Instructions
+==============================================
+
+Prerequisites
+-------------
+- Docker Desktop installed and running.
+  macOS:    https://www.docker.com/products/docker-desktop/
+  Windows:  https://www.docker.com/products/docker-desktop/
+  Linux:    install Docker Engine + Docker Compose v2 plugin.
+
+  Verify:   docker --version
+            docker compose version
+
+That is the ONLY dependency. Java and Maven are not needed on the host —
+the Dockerfile builds the JAR inside a build container.
+
+
+Run
+---
+1. Unzip the archive and open a terminal in the unzipped folder
+   (the folder that contains docker-compose.yml).
+
+2. Build and start everything:
+
+       docker compose up --build
+
+   First run takes a few minutes (downloads Maven deps + MySQL image and
+   builds the app). Subsequent runs are fast.
+
+3. When you see a line like:
+
+       sfquiz-app  | Started SfQuizApplication in N seconds
+
+   the app is up.
+
+
+URLs
+----
+- Quiz app:        http://localhost:8095
+- Mailpit (SMTP):  http://localhost:8025
+    (Captures outgoing emails — useful for password-reset flow demos.)
+
+
+Default admin login
+-------------------
+The first startup auto-creates an admin account:
+
+    Email:     admin@local
+    Password:  ChangeMe123!
+
+The app forces a password change on first sign-in.
+
+
+Stop / clean up
+---------------
+- Stop containers (keep DB data):   Ctrl+C  then  docker compose down
+- Stop AND wipe the database:       docker compose down -v
+- Restart later:                    docker compose up
+
+
+Common issues
+-------------
+- "Port 8095 / 3307 / 8025 / 1025 is already in use"
+  Stop whatever else is using the port, or edit docker-compose.yml and
+  change the host-side port (e.g. "8096:8095").
+
+- Slow first build
+  Docker is downloading the Maven base image (~700 MB) and resolving
+  dependencies. Only happens once per machine.
+
+- Need to reset the demo data between runs
+  docker compose down -v && docker compose up --build
+
+
+Project layout
+--------------
+- Dockerfile           Multi-stage build (Maven build → JRE runtime).
+- docker-compose.yml   App + MySQL + Mailpit.
+- pom.xml              Spring Boot 3.3.4 / Java 17.
+- src/                 Application source (controllers, entities, JS, CSS).

@@ -1,0 +1,11 @@
+{
+  "slug": "data-cloud-consultant",
+  "name": "Salesforce Data Cloud Consultant",
+  "description": "Configure, administer, and operate Salesforce Data Cloud for identity-resolved customer data.",
+  "questionsPerSession": 60,
+  "durationMinutes": 105,
+  "passingScorePercent": 62,
+  "sortOrder": 50,
+  "active": true,
+  "questions": []
+}

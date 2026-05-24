@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Certification Practice Playground</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Certification Practice Playground</div>
+    <div class="topbar-actions" id="topbarActions">
+      <a class="topbar-link" href="/exams.html">Exams</a>
+      <a class="topbar-link" href="/my/reports">My reports</a>
+      <a class="topbar-link" href="/uploads">Add questions</a>
+      <a class="topbar-link admin-only" href="/admin" style="display:none">Users</a>
+      <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions for Review</a>
+      <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+      <a class="topbar-link" href="/change-password">Change password</a>
+      <span class="topbar-user" id="userBadge"></span>
+      <form method="post" action="/logout" style="display:inline">
+        <button type="submit" class="topbar-link as-btn">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <div class="layout" id="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">All questions</span>
+      </div>
+      <ul class="qlist" id="qlist"></ul>
+    </aside>
+    <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
+
+    <main class="main">
+      <div class="main-header">
+        <div class="header-left">
+          <span class="badge-practice">Practice mode (Beta)</span>
+          <div class="timer" id="timer">
+            <svg class="timer-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="13" r="8"/>
+              <path d="M12 9v4l2 2"/>
+              <path d="M9 2h6"/>
+            </svg>
+            <span class="timer-text" id="timerText">90:00</span>
+            <button type="button" id="timerToggle" class="btn-timer" title="Pause">Pause</button>
+            <span class="timer-divider">|</span>
+            <button type="button" id="timerReset" class="btn-timer" title="Reset timer to 90:00">Reset</button>
+          </div>
+        </div>
+        <div class="header-right">
+          <span class="progress-text" id="progressText">0/60</span>
+          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+          <button class="btn btn-reset" id="resetBtn" type="button" title="Reset and reshuffle the test">Reset</button>
+          <button class="btn btn-finish" id="finishBtn" type="button">Finish test</button>
+        </div>
+      </div>
+
+      <div class="main-body">
+        <div id="quizArea">
+          <div id="resultBanner" class="banner hidden"></div>
+
+          <div class="question-section">
+            <div class="qtitle" id="qNum">Question 1:</div>
+            <div class="qtext" id="qText"></div>
+            <div class="qhint" id="qHint"></div>
+          </div>
+
+          <div class="choices" id="choices"></div>
+
+          <div id="explanationBox" class="explanation-box hidden">
+            <div class="explanation-title">Overall explanation</div>
+            <div id="explanationText" class="explanation-text"></div>
+            <div class="explanation-link">
+              <span class="explanation-link-label">Reference:</span>
+              <a id="helpLink" target="_blank" rel="noopener noreferrer"></a>
+            </div>
+          </div>
+
+          <div class="actions-bar">
+            <button id="submitBtn" class="btn btn-primary" type="button">Submit answer</button>
+            <div class="nav-actions">
+              <button id="backBtn" class="btn btn-link" type="button">Back</button>
+              <button id="nextBtn" class="btn btn-primary" type="button">Next question ›</button>
+            </div>
+          </div>
+
+          <!-- Per-question vote: green thumbs-up, red thumbs-down. Builds a
+               quality signal so admin can see which questions land well. -->
+          <div class="vote-bar" id="voteBar" aria-label="Rate this question">
+            <span class="vote-bar-label">Was this question useful?</span>
+            <button type="button" class="vote-btn vote-up" id="voteUpBtn" title="Thumbs up — good question">
+              <span aria-hidden="true">👍</span>
+              <span class="vote-count" id="voteUpCount">0</span>
+            </button>
+            <button type="button" class="vote-btn vote-down" id="voteDownBtn" title="Thumbs down — needs work">
+              <span aria-hidden="true">👎</span>
+              <span class="vote-count" id="voteDownCount">0</span>
+            </button>
+            <span class="vote-reason-note" id="voteReasonNote" style="display:none"></span>
+          </div>
+
+          <!-- Verifier reason modal — opens when a VERIFIER clicks 👍/👎.
+               Hidden for regular users; they vote without a reason. -->
+          <div id="verifierReasonModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="verifierReasonTitle">
+            <div class="modal-card">
+              <h3 id="verifierReasonTitle">Pick a reason</h3>
+              <p class="modal-hint">Required for verifier votes — helps the admin spot quality issues.</p>
+              <label>
+                <span>Reason *</span>
+                <select id="verifierReasonSelect" autofocus>
+                  <option value="">— Pick a reason —</option>
+                </select>
+              </label>
+              <label id="verifierReasonOtherLabel" style="display:none">
+                <span>Specify</span>
+                <input type="text" id="verifierReasonOther" placeholder="Type your reason…" maxlength="200" />
+              </label>
+              <div class="modal-actions">
+                <button type="button" class="btn" id="verifierReasonCancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="verifierReasonSubmit">Submit vote</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section id="resultsPanel" class="results-panel hidden" aria-live="polite">
+          <div id="resultsSummary">
+            <h2 class="results-title">Your results</h2>
+            <div class="results-passfail hidden" id="passFailBanner">
+              <span class="results-passfail-pill" id="passFailPill">—</span>
+              <span class="results-passfail-detail" id="passFailDetail">—</span>
+            </div>
+            <div class="results-score">
+              <div class="results-score-value" id="resScore">0%</div>
+              <div class="results-score-label" id="resScoreLabel">Score</div>
+            </div>
+            <div class="results-grid">
+              <div class="results-stat">
+                <div class="results-stat-value" id="resCompleted">0</div>
+                <div class="results-stat-label">Completed</div>
+              </div>
+              <button class="results-stat correct clickable" id="statCorrect" type="button" aria-label="View correct answers">
+                <div class="results-stat-value" id="resCorrect">0</div>
+                <div class="results-stat-label">Correct <span class="results-stat-arrow" aria-hidden="true">›</span></div>
+              </button>
+              <button class="results-stat incorrect clickable" id="statIncorrect" type="button" aria-label="View incorrect answers">
+                <div class="results-stat-value" id="resIncorrect">0</div>
+                <div class="results-stat-label">Incorrect <span class="results-stat-arrow" aria-hidden="true">›</span></div>
+              </button>
+              <div class="results-stat">
+                <div class="results-stat-value" id="resUnanswered">0</div>
+                <div class="results-stat-label">Unanswered</div>
+              </div>
+            </div>
+            <div class="results-actions">
+              <button id="retestBtn" class="btn btn-reset" type="button">Retest</button>
+              <button id="backToTestBtn" class="btn btn-primary" type="button">Back to test</button>
+            </div>
+          </div>
+
+          <div id="resultsDetail" class="hidden">
+            <div class="results-detail-header">
+              <button id="backToSummaryBtn" class="btn btn-link" type="button">‹ Back to summary</button>
+              <h2 class="results-detail-title" id="resultsDetailTitle">Correct answers</h2>
+            </div>
+            <div id="resultsDetailItems" class="results-detail-items"></div>
+            <div class="results-pagination">
+              <button id="resultsPrevBtn" class="btn btn-link" type="button">‹ Previous</button>
+              <span class="results-page-info" id="resultsPageInfo">Page 1 of 1</span>
+              <button id="resultsNextBtn" class="btn btn-link" type="button">Next ›</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="confirmPanel" class="confirm-panel hidden" aria-live="polite">
+          <h2 class="confirm-title" id="confirmTitle">Reset and reshuffle the test?</h2>
+          <p class="confirm-body" id="confirmBody">This will reshuffle all questions, clear your answers, and reset the timer to 90:00.</p>
+          <div class="confirm-actions">
+            <button id="confirmCancelBtn" class="btn btn-link" type="button">Cancel</button>
+            <button id="confirmAltBtn" class="btn btn-reset hidden" type="button">Alt</button>
+            <button id="confirmOkBtn" class="btn btn-primary" type="button">Reset test</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/quiz.js"></script>
+</body>
+</html>

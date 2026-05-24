@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Salesforce Admin Practice Quiz — Team Slides</title>
+  <style>
+    :root {
+      /* Salesforce / Agentforce palette — keeping --purple-* names so existing
+         slide markup works; values are now SF Cosmos navy + Salesforce blue. */
+      --purple-700: #032D60;
+      --purple-600: #0176D3;
+      --purple-500: #014486;
+      --purple-50:  #EAF5FE;
+      --green-100:  #d1fae5;
+      --green-700:  #047857;
+      --green-800:  #065f46;
+      --red-100:    #fee2e2;
+      --red-800:    #991b1b;
+      --gray-900:   #111827;
+      --gray-800:   #1f2937;
+      --gray-700:   #374151;
+      --gray-500:   #6b7280;
+      --gray-200:   #e5e7eb;
+      --gray-100:   #f3f4f6;
+      --gray-50:    #f9fafb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--gray-100);
+      color: var(--gray-900);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+    .slide {
+      width: 1280px;
+      height: 720px;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(17, 24, 39, 0.12);
+      padding: 56px 64px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 8px;
+      background: linear-gradient(90deg, var(--purple-700), var(--purple-500));
+    }
+    .eyebrow {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      color: var(--purple-600);
+      margin-bottom: 12px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--gray-900);
+    }
+    .subtitle {
+      font-size: 20px;
+      color: var(--gray-700);
+      margin-bottom: 36px;
+      line-height: 1.4;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      flex: 1;
+    }
+    .card {
+      background: var(--gray-50);
+      border: 1px solid var(--gray-200);
+      border-left: 4px solid var(--purple-600);
+      border-radius: 10px;
+      padding: 20px 22px;
+    }
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--gray-900);
+      margin: 0 0 6px;
+    }
+    .card-body {
+      font-size: 15px;
+      color: var(--gray-700);
+      line-height: 1.5;
+      margin: 0;
+    }
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 44px 1fr;
+      gap: 18px;
+      align-items: start;
+      padding: 14px 18px;
+      background: var(--purple-50);
+      border-radius: 10px;
+    }
+    .step-num {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--purple-600);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .step-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--gray-900);
+      margin: 0 0 2px;
+    }
+    .step-body {
+      font-size: 14px;
+      color: var(--gray-700);
+      line-height: 1.45;
+      margin: 0;
+    }
+    .stat-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat {
+      flex: 1;
+      padding: 16px 18px;
+      background: var(--purple-50);
+      border: 1px solid #ddd6fe;
+      border-radius: 10px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 30px;
+      font-weight: 700;
+      color: var(--purple-700);
+      line-height: 1;
+    }
+    .stat-label {
+      font-size: 13px;
+      color: var(--gray-700);
+      margin-top: 6px;
+    }
+    .footer {
+      position: absolute;
+      bottom: 24px;
+      left: 64px;
+      right: 64px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--gray-500);
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+    .pill.correct { background: var(--green-100); color: var(--green-800); }
+    .pill.incorrect { background: var(--red-100); color: var(--red-800); }
+    .inline-tags { display: flex; gap: 8px; margin-top: 10px; }
+    @media print {
+      body { background: #fff; padding: 0; gap: 0; }
+      .slide { box-shadow: none; border-radius: 0; page-break-after: always; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- =================== SLIDE 1 =================== -->
+  <section class="slide" id="slide-1">
+    <div class="eyebrow">Internal Tool · Salesforce Admin (CRT-101)</div>
+    <h1>Salesforce Admin Practice Quiz</h1>
+    <p class="subtitle">A self-hosted, exam-style practice app to help our team train for the Salesforce Administrator certification — no logins to external sites, no per-seat licenses, no rate limits.</p>
+
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-value">248</div>
+        <div class="stat-label">Questions in the bank</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">60</div>
+        <div class="stat-label">Random per session</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">90 min</div>
+        <div class="stat-label">Timed (matches exam)</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">1 cmd</div>
+        <div class="stat-label">docker compose up</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3 class="card-title">Exam-style experience</h3>
+        <p class="card-body">Single- and multi-select questions, 90-minute countdown, pause/resume, and a sidebar showing your status across every question.</p>
+      </div>
+      <div class="card">
+        <h3 class="card-title">Instant feedback per question</h3>
+        <p class="card-body">After each submit, see the correct answer, an explanation, and a link to the Trailhead / Help doc reference for that topic.</p>
+      </div>
+      <div class="card">
+        <h3 class="card-title">Score + drill-down review</h3>
+        <p class="card-body">Finish to see your score and a paginated review of every correct and incorrect answer — perfect for focused gap study.</p>
+      </div>
+      <div class="card">
+        <h3 class="card-title">Runs on any laptop</h3>
+        <p class="card-body">Self-contained Docker stack (app + MySQL + mail capture). No cloud setup, no firewall asks. Stop with one Ctrl-C.</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Salesforce Admin Practice Quiz</span>
+      <span>1 / 2</span>
+    </div>
+  </section>
+
+  <!-- =================== SLIDE 2 =================== -->
+  <section class="slide" id="slide-2">
+    <div class="eyebrow">How it trains you</div>
+    <h1>From "Start" to certification-ready</h1>
+    <p class="subtitle">A focused practice loop you can run as many times as you want — every retest reshuffles a fresh 60 questions, renumbered 1–60.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div>
+          <h4 class="step-title">Sign in &amp; start</h4>
+          <p class="step-body">Open <code>http://localhost:8095</code>. The 90-minute timer starts automatically. Pause anytime; pick up where you left off.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div>
+          <h4 class="step-title">Answer &amp; learn as you go</h4>
+          <p class="step-body">Submit each answer to see if you got it right, the correct choice(s), an explanation paragraph, and the official reference link.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div>
+          <h4 class="step-title">Finish test → in-page results</h4>
+          <p class="step-body">Big score number + breakdown tiles: Completed, <span class="pill correct">Correct</span> <span class="pill incorrect">Incorrect</span>, Unanswered. No popups.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div>
+          <h4 class="step-title">Drill into your mistakes</h4>
+          <p class="step-body">Click <strong>Correct</strong> or <strong>Incorrect</strong> to open a full-width review — 3 questions per page with your answer, the right answer, and the explanation. Ideal for targeted study.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div>
+          <h4 class="step-title">Retest with one click</h4>
+          <p class="step-body">"Retest" reshuffles a fresh 60 from the bank and resets the timer. Or reset just the timer if you want another 90 minutes on the same set.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Run it: <strong>docker compose up --build</strong> · App: localhost:8095 · Mail: localhost:8025</span>
+      <span>2 / 2</span>
+    </div>
+  </section>
+
+</body>
+</html>

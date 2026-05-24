@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Question quality report</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+  <style>
+    .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 320px; background: #fff; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0 24px; }
+    .summary-card { background: var(--gray-50, #f9fafb); border: 1px solid var(--gray-200, #e5e7eb); border-radius: 8px; padding: 12px 14px; }
+    .summary-card .label { color: var(--gray-700, #374151); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-card .value { font-size: 24px; font-weight: 700; color: var(--gray-900, #111827); margin-top: 4px; }
+    .pct-pill { display: inline-block; padding: 3px 9px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+    .pct-pill.good { background: #d1fae5; color: #065f46; }
+    .pct-pill.mid  { background: #fef3c7; color: #92400e; }
+    .pct-pill.bad  { background: #fee2e2; color: #991b1b; }
+    .q-cell { max-width: 540px; font-size: 13px; color: var(--gray-700, #374151); }
+    .leaderboard { margin-top: 32px; }
+    .net-positive { color: #047857; font-weight: 600; }
+    .net-negative { color: #b91c1c; font-weight: 600; }
+    .net-zero     { color: var(--gray-500, #6b7280); }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree" aria-label="Reports navigation">
+    <div class="reports-tree-section">Reports</div>
+    <a href="/admin/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''">
+      <span aria-hidden="true">📊</span> Dashboard
+    </a>
+    <div class="reports-tree-section">People</div>
+    <a href="/admin/reports/scores" th:classappend="${section == 'scores'} ? 'active' : ''">
+      <span aria-hidden="true">🎯</span> All-user scores
+    </a>
+    <div class="reports-tree-section">Quality</div>
+    <a href="/admin/reports/quality" th:classappend="${section == 'quality'} ? 'active' : ''">
+      <span aria-hidden="true">👍</span> Question quality
+    </a>
+    <a href="/admin/reports/verifier-feedback" th:classappend="${section == 'verifier-feedback'} ? 'active' : ''">
+      <span aria-hidden="true">📝</span> Verifier feedback
+    </a>
+  </aside>
+
+  <main class="reports-content">
+  <h1>Question quality report</h1>
+  <p class="muted">User thumbs-up / thumbs-down votes per question. Use this to spot questions that need editing or retiring, and to see which exam the user base rates highest overall.</p>
+
+  <form method="get" action="/admin/reports/quality" class="filter-bar">
+    <label>
+      <span>Exam</span>
+      <select name="exam" onchange="this.form.submit()">
+        <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}" th:selected="${ex.slug == exam}">Exam</option>
+      </select>
+    </label>
+  </form>
+
+  <section th:if="${report != null}">
+    <h2 th:text="${exam}">exam</h2>
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="label">Total votes</div>
+        <div class="value" th:text="${report.totalVotes}">0</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Thumbs up</div>
+        <div class="value" style="color: #047857;" th:text="${report.up}">0</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Thumbs down</div>
+        <div class="value" style="color: #b91c1c;" th:text="${report.down}">0</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">% positive</div>
+        <div class="value">
+          <span th:text="${report.approxPercentUp} + '%'">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>Top 10 highest-rated questions</h3>
+    <div class="empty" th:if="${#lists.isEmpty(report.top)}">No votes yet for this exam.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(report.top)}">
+      <thead><tr><th>#</th><th>Question</th><th>👍</th><th>👎</th><th>Net</th><th>Edit</th></tr></thead>
+      <tbody>
+        <tr th:each="r : ${report.top}">
+          <td th:text="${r.number}">0</td>
+          <td class="q-cell" th:text="${#strings.abbreviate(r.text, 200)}">…</td>
+          <td th:text="${r.up}">0</td>
+          <td th:text="${r.down}">0</td>
+          <td th:classappend="${r.net > 0} ? 'net-positive' : (${r.net < 0} ? 'net-negative' : 'net-zero')"
+              th:text="${r.net > 0 ? '+' + r.net : r.net}">0</td>
+          <td><a class="btn btn-sm" th:href="@{|/admin/questions/${r.id}/edit|}">Edit</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top: 28px;">Bottom 10 lowest-rated questions</h3>
+    <p class="muted">Candidates for editing or retiring.</p>
+    <div class="empty" th:if="${#lists.isEmpty(report.bottom)}">No votes yet for this exam.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(report.bottom)}">
+      <thead><tr><th>#</th><th>Question</th><th>👍</th><th>👎</th><th>Net</th><th>Edit</th></tr></thead>
+      <tbody>
+        <tr th:each="r : ${report.bottom}">
+          <td th:text="${r.number}">0</td>
+          <td class="q-cell" th:text="${#strings.abbreviate(r.text, 200)}">…</td>
+          <td th:text="${r.up}">0</td>
+          <td th:text="${r.down}">0</td>
+          <td th:classappend="${r.net > 0} ? 'net-positive' : (${r.net < 0} ? 'net-negative' : 'net-zero')"
+              th:text="${r.net > 0 ? '+' + r.net : r.net}">0</td>
+          <td><a class="btn btn-sm" th:href="@{|/admin/questions/${r.id}/edit|}">Edit</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="leaderboard">
+    <h2>Quality leaderboard (across all exams)</h2>
+    <p class="muted">Sorted by % positive. The user base's confidence vote in each test.</p>
+    <table class="admin-table">
+      <thead><tr><th>Exam</th><th>Total votes</th><th>👍</th><th>👎</th><th>% positive</th></tr></thead>
+      <tbody>
+        <tr th:each="r : ${leaderboard}">
+          <td><code th:text="${r.slug}">slug</code></td>
+          <td th:text="${r.totalVotes}">0</td>
+          <td th:text="${r.up}">0</td>
+          <td th:text="${r.down}">0</td>
+          <td>
+            <span th:classappend="${r.approxPercentUp >= 75} ? 'pct-pill good' : (${r.approxPercentUp >= 50} ? 'pct-pill mid' : 'pct-pill bad')"
+                  th:text="${r.totalVotes > 0 ? r.approxPercentUp + '%' : '—'}">0%</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+  </main>
+</div>
+</body>
+</html>

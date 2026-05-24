@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Material Uploads — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .uploads-hint { color: var(--gray-500, #6b7280); font-size: .9rem; }
+    .uploads-hint code { background: var(--gray-100, #f3f4f6); padding: 1px 4px; border-radius: 4px; }
+    .upload-form { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .upload-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .upload-label span { font-weight: 500; }
+    .upload-label select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 280px; background: #fff; }
+    .upload-label select:focus { outline: none; border-color: var(--brand-primary, #0176D3); box-shadow: 0 0 0 2px var(--brand-tint, #EAF5FE); }
+    .upload-label-file input[type="file"] { padding: 6px 0; }
+    .paste-form { display: flex; flex-direction: column; gap: 14px; max-width: 760px; align-items: stretch; }
+    .paste-form .upload-label select { min-width: 100%; }
+    .upload-label-paste textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--gray-300, #d1d5db);
+      border-radius: 6px;
+      font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      resize: vertical;
+      min-height: 200px;
+    }
+    .upload-label-paste textarea:focus { outline: none; border-color: var(--brand-primary, #0176D3); box-shadow: 0 0 0 2px var(--brand-tint, #EAF5FE); }
+    .upload-label input[type="text"] { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; }
+    .upload-label input[type="text"]:focus { outline: none; border-color: var(--brand-primary, #0176D3); box-shadow: 0 0 0 2px var(--brand-tint, #EAF5FE); }
+    .paste-form button { align-self: flex-start; }
+    /* Gate: the empty "Pick a test —" select gets a soft yellow highlight, and
+       the content fields visibly read as locked until the user picks an exam. */
+    .gated-by-exam select:invalid { background: #fff8c5; }
+    .gated-by-exam :disabled { opacity: 0.55; cursor: not-allowed; }
+    .gate-hint {
+      display: inline-block;
+      margin-left: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #fff8c5;
+      color: var(--gray-700, #374151);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    /* When one form is "in use" (has content), the OTHER goes into a dimmed
+       locked state — the whole section reads as inactive until the user
+       clears the active form. */
+    .locked-by-other { opacity: 0.55; }
+    .locked-by-other .gate-hint {
+      background: #fee2e2;
+      color: var(--red-800, #991b1b);
+      display: block !important;
+      padding: 8px 12px;
+      margin-top: 10px;
+      max-width: 720px;
+      line-height: 1.4;
+    }
+    /* The active form gets a subtle blue accent on its border so users see
+       which path they're using right now. */
+    .is-active { border-left: 3px solid var(--brand-primary, #0176D3); padding-left: 14px; }
+    .reset-form-btn { background: var(--gray-50, #f9fafb); border: 1px solid var(--gray-300, #d1d5db); margin-left: 8px; }
+    .reset-form-btn:hover { background: var(--gray-100, #f3f4f6); }
+    /* "Live" pill next to the Files heading — animates a soft pulse to show
+       the auto-refresh is on. */
+    .live-pill {
+      display: inline-block;
+      margin-left: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--gray-100, #f3f4f6);
+      color: var(--gray-500, #6b7280);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      vertical-align: middle;
+    }
+    .live-pill.active {
+      background: var(--green-100, #d1fae5);
+      color: var(--green-800, #065f46);
+      animation: pulse-live 2s ease-in-out infinite;
+    }
+    @keyframes pulse-live {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+    .file-meta { color: var(--gray-500, #6b7280); font-size: .85rem; }
+    .unsupported { color: var(--red-800, #991b1b); }
+    .budget-card { display: flex; gap: 28px; padding: 12px 16px; background: var(--purple-50, #EAF5FE); border-left: 4px solid var(--purple-600, #0176D3); border-radius: 8px; margin-bottom: 18px; font-size: .95rem; }
+    .budget-card.exhausted { background: var(--red-100, #fee2e2); border-left-color: var(--red-800, #991b1b); }
+    .budget-card .label { color: var(--gray-700, #374151); }
+    .budget-card .value { font-weight: 600; color: var(--gray-900, #111827); margin-left: 4px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; }
+    .pill.pending    { background: #e0e7ff; color: #3730a3; }
+    .pill.processing { background: #fef3c7; color: #92400e; }
+    .pill.done       { background: var(--green-100, #d1fae5); color: var(--green-800, #065f46); }
+    .pill.failed     { background: var(--red-100, #fee2e2); color: var(--red-800, #991b1b); }
+    .pill.skipped    { background: #f3f4f6; color: #4b5563; }
+    .row-error { color: var(--red-800, #991b1b); font-size: .8rem; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin" sec:authorize="hasRole('ADMIN')">Users</a>
+    <a class="topbar-link" href="/admin/questions" sec:authorize="hasRole('ADMIN')">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports" sec:authorize="hasRole('ADMIN')">Reports</a>
+    <a class="topbar-link" href="/uploads" sec:authorize="hasRole('ADMIN')">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{
+      if(!d||!d.authenticated) return;
+      const el=document.getElementById("userBadge");
+      if(!el) return;
+      const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+      el.textContent=name+" ("+(d.role||"USER")+")";
+    });
+})();
+</script>
+
+<main class="admin-wrap">
+  <h1>Study material uploads</h1>
+  <p class="uploads-hint" th:if="${isAdmin}">
+    Drop study documents here — Claude extracts practice questions in the background and posts survivors to
+    <a href="/admin/questions">Question review</a> for your approval.<br />
+    Allowed: <code th:text="${allowedExt}">txt, md, html, pdf, png, jpg, jpeg, gif, webp</code>. Max <span th:text="${maxMb}">25</span> MB per file.
+    Google Docs: <em>File → Download → Plain Text (.txt) or PDF</em>, then upload.
+    <strong>Screenshots</strong> are extracted via Claude vision — drop them in as-is.<br />
+    <strong>Auto-processed</strong>: extraction kicks off the moment the upload lands and usually finishes within ~15–30 s.
+    Refresh this page to watch the <em>Status</em> column flip from <em>Processing</em> to <em>Done</em>.
+  </p>
+  <p class="uploads-hint" th:unless="${isAdmin}">
+    Drop screenshots or text from your study material here — Claude extracts the questions and sends them to an admin for review.
+    Once approved, they show up in the live quiz.<br />
+    Allowed: <code th:text="${allowedExt}">txt, md, html, pdf, png, jpg, jpeg, gif, webp</code>. Max <span th:text="${maxMb}">25</span> MB per file.
+    You'll see your own uploads here with a status — refresh after ~30 s to watch extraction finish.
+  </p>
+
+  <div class="budget-card" th:if="${isAdmin}" th:classappend="${budgetExhausted} ? 'exhausted' : ''">
+    <div><span class="label">Today's spend:</span><span class="value">$<span th:text="${spentUsd}">0.00</span></span></div>
+    <div><span class="label">Daily cap:</span><span class="value">$<span th:text="${budgetUsd}">2.00</span></span></div>
+    <div><span class="label">Remaining:</span><span class="value">$<span th:text="${remainingUsd}">2.00</span></span></div>
+    <div th:if="${budgetExhausted}" class="unsupported">Budget exhausted — new uploads will be marked FAILED until UTC midnight.</div>
+  </div>
+  <p class="muted unsupported" th:if="${budgetExhausted and not isAdmin}">
+    Uploads are temporarily paused — daily extraction quota exhausted. Try again after UTC midnight.
+  </p>
+
+  <p class="muted" th:if="${uploadedCount != null and uploadedCount > 0}">
+    Uploaded <span th:text="${uploadedCount}">0</span> file(s)<span th:if="${uploadedExam != null}"> for <code th:text="${uploadedExam}">exam</code></span>.
+    Extraction is running now — refresh in ~30 s.
+  </p>
+  <p class="muted" th:if="${retriedId != null}">
+    Re-queued upload #<span th:text="${retriedId}">0</span> for extraction.
+  </p>
+  <p class="banner banner-info" th:if="${overrideMessage}" th:text="${overrideMessage}">override message</p>
+  <p class="muted unsupported" th:if="${rejected != null and not #lists.isEmpty(rejected)}">
+    Rejected:
+    <span th:each="r, it : ${rejected}">
+      <span th:text="${r}">…</span><span th:if="${!it.last}">, </span>
+    </span>
+  </p>
+  <p class="muted" th:if="${param.deleted}">Deleted.</p>
+  <p class="banner banner-error" th:if="${uploadError}" th:text="${uploadError}">error</p>
+
+  <section class="admin-section">
+    <h2>Upload a file</h2>
+    <p class="muted">Pick the test first, then drop a screenshot, PDF, or text/markdown/HTML file. Claude extracts the questions and they wait for admin approval.</p>
+    <form method="post" action="/uploads" enctype="multipart/form-data" class="upload-form gated-by-exam">
+      <label class="upload-label">
+        <span>Test this is for *</span>
+        <select name="examSlug" required>
+          <option value="">— Pick a test —</option>
+          <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}">Exam</option>
+        </select>
+      </label>
+      <label class="upload-label upload-label-file">
+        <span>File(s) *</span>
+        <input type="file" name="file" multiple required disabled
+               accept=".txt,.md,.markdown,.html,.htm,.pdf,.png,.jpg,.jpeg,.gif,.webp,text/plain,text/markdown,text/html,application/pdf,image/png,image/jpeg,image/gif,image/webp" />
+      </label>
+      <button class="btn btn-primary" type="submit" disabled>Upload</button>
+      <button class="btn btn-sm reset-form-btn" type="button" style="display:none"
+              title="Clear this form so you can use the other option instead">Clear &amp; switch</button>
+      <span class="gate-hint">Pick a test first.</span>
+    </form>
+  </section>
+
+  <section class="admin-section">
+    <h2>Paste from clipboard</h2>
+    <p class="muted">Pick the test first, then paste question text from anywhere (Trailhead, a forum post, a PDF). Same extraction + admin-approval flow as a file upload.</p>
+    <form method="post" action="/uploads/paste" class="paste-form gated-by-exam">
+      <label class="upload-label">
+        <span>Test this is for *</span>
+        <select name="examSlug" required>
+          <option value="">— Pick a test —</option>
+          <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}">Exam</option>
+        </select>
+      </label>
+      <label class="upload-label upload-label-paste">
+        <span>Paste questions here *</span>
+        <textarea name="content" rows="10" required disabled
+                  placeholder="Pick a test above first, then paste your questions here…"></textarea>
+      </label>
+      <label class="upload-label">
+        <span>Source (optional)</span>
+        <input type="text" name="title" placeholder="e.g., Trailhead Module 3 — Quizlet set 7" maxlength="80" disabled />
+      </label>
+      <button class="btn btn-primary" type="submit" disabled>Submit pasted text</button>
+      <button class="btn btn-sm reset-form-btn" type="button" style="display:none"
+              title="Clear this form so you can use the other option instead">Clear &amp; switch</button>
+      <span class="gate-hint">Pick a test first.</span>
+    </form>
+  </section>
+
+  <script>
+  (function () {
+    const fileForm  = document.querySelector('form[action="/uploads"]');
+    const pasteForm = document.querySelector('form[action="/uploads/paste"]');
+    if (!fileForm || !pasteForm) return;
+
+    const fileInput = fileForm.querySelector('input[type="file"]');
+    const pasteText = pasteForm.querySelector('textarea[name="content"]');
+
+    // A form is "active" as soon as the user picks ANY exam in it, or
+    // selects a file, or types in its textarea — i.e. the moment they show
+    // intent to use that path.
+    function isActive(form) {
+      const select = form.querySelector('select[name="examSlug"]');
+      if (select && select.value) return true;
+      const file = form.querySelector('input[type="file"]');
+      if (file && file.files && file.files.length > 0) return true;
+      const text = form.querySelector('textarea[name="content"]');
+      if (text && text.value.trim().length > 0) return true;
+      return false;
+    }
+
+    function applyForm(form, thisActive, otherActive) {
+      const lockedByOther = otherActive && !thisActive;
+      const select = form.querySelector('select[name="examSlug"]');
+      const contentFields = form.querySelectorAll(
+        'input[type="file"], textarea, input[type="text"][name="title"], button[type="submit"]'
+      );
+      const examOk = !!(select && select.value);
+
+      // The exam dropdown is disabled when the OTHER form is active — that's
+      // how we enforce "only one path at a time at the dropdown level."
+      if (select) select.disabled = lockedByOther;
+
+      // Content + submit need both: this form's exam picked, and other form not active.
+      const enabled = examOk && !lockedByOther;
+      contentFields.forEach(function (el) { el.disabled = !enabled; });
+
+      form.classList.toggle('locked-by-other', lockedByOther);
+      form.classList.toggle('is-active', thisActive);
+
+      const hint = form.querySelector('.gate-hint');
+      if (hint) {
+        if (lockedByOther) {
+          hint.innerHTML = '← Use the active form above. Hit <strong>Clear &amp; switch</strong> there to switch back here.';
+          hint.style.display = '';
+        } else if (!examOk) {
+          hint.textContent = 'Pick a test first.';
+          hint.style.display = '';
+        } else {
+          hint.style.display = 'none';
+        }
+      }
+
+      const clearBtn = form.querySelector('.reset-form-btn');
+      if (clearBtn) clearBtn.style.display = thisActive ? '' : 'none';
+    }
+
+    function applyAll() {
+      const fileActive  = isActive(fileForm);
+      const pasteActive = isActive(pasteForm);
+      applyForm(fileForm,  fileActive,  pasteActive);
+      applyForm(pasteForm, pasteActive, fileActive);
+    }
+
+    function wireClear(form) {
+      const btn = form.querySelector('.reset-form-btn');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        form.reset();
+        // form.reset() doesn't always clear the file input's selected files
+        // on every browser — explicitly nuke it.
+        const fi = form.querySelector('input[type="file"]');
+        if (fi) fi.value = '';
+        applyAll();
+        // Scroll focus to the cleared select so the user sees the form is empty.
+        const sel = form.querySelector('select[name="examSlug"]');
+        if (sel) { sel.focus(); }
+      });
+    }
+
+    fileForm.querySelector('select[name="examSlug"]').addEventListener('change', applyAll);
+    pasteForm.querySelector('select[name="examSlug"]').addEventListener('change', applyAll);
+    if (fileInput) fileInput.addEventListener('change', applyAll);
+    if (pasteText) pasteText.addEventListener('input',  applyAll);
+    wireClear(fileForm);
+    wireClear(pasteForm);
+
+    applyAll();
+  })();
+  </script>
+
+  <section class="admin-section" id="filesSection" th:attr="data-is-admin=${isAdmin}">
+    <h2>Files <span class="count" id="filesCount" th:text="'(' + ${#lists.size(uploads)} + ')'">(0)</span>
+      <span id="livePill" class="live-pill" title="Auto-updating every few seconds — no refresh needed">● live</span></h2>
+    <div id="filesContainer">
+    <div class="empty" th:if="${#lists.isEmpty(uploads)}">No uploads yet.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(uploads)}">
+      <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Status</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead>
+      <tbody>
+        <tr th:each="u : ${uploads}">
+          <td>
+            <a th:href="@{|/uploads/${u.id}/download|}" th:text="${u.originalName}">file.pdf</a>
+            <div class="row-error" th:if="${u.error != null and not #strings.isEmpty(u.error)}" th:text="${u.error}">error message</div>
+          </td>
+          <td th:text="${#numbers.formatDecimal(u.sizeBytes / 1024.0, 1, 1) + ' KB'}">0 KB</td>
+          <td th:text="${#temporals.format(u.uploadedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td th:if="${isAdmin}" th:text="${u.uploadedByEmail != null ? u.uploadedByEmail : '—'}">—</td>
+          <td>
+            <span th:switch="${u.status.name()}">
+              <span th:case="'PENDING'"    class="pill pending">Pending</span>
+              <span th:case="'PROCESSING'" class="pill processing">Extracting…</span>
+              <span th:case="'DONE'"       class="pill done">Done</span>
+              <span th:case="'FAILED'"     class="pill failed">Failed</span>
+              <span th:case="'SKIPPED'"    class="pill skipped">Skipped</span>
+            </span>
+          </td>
+          <td>
+            <span th:if="${u.questionsImported != null}">
+              <strong th:text="${u.questionsImported}">0</strong>
+              imported<span th:if="${u.questionsExtracted != null and u.questionsExtracted > u.questionsImported}"> /
+              <span th:text="${u.questionsExtracted}">0</span> extracted</span>
+            </span>
+            <span class="muted" th:unless="${u.questionsImported != null}">—</span>
+          </td>
+          <td class="actions-col">
+            <form method="post" th:action="@{|/uploads/${u.id}/retry|}" style="display:inline"
+                  th:if="${u.status.name() == 'FAILED' or u.status.name() == 'SKIPPED'}">
+              <button class="btn btn-sm" type="submit">Retry</button>
+            </form>
+            <form method="post" th:action="@{|/uploads/${u.id}/override-dump-check|}" style="display:inline"
+                  sec:authorize="hasRole('ADMIN')"
+                  th:if="${u.status.name() == 'SKIPPED' and u.error != null and #strings.contains(u.error, 'dump')}">
+              <button class="btn btn-warning btn-sm" type="submit"
+                      title="Skip the leaked-content check and force-extract anyway."
+                      onclick="return confirm('Override dump-check?\n\nClaude flagged this file as possibly leaked/paid real-exam content. Overriding will run extraction anyway and add the resulting questions as PENDING for your review.\n\nOnly do this if you are certain the material is legitimately written practice content. You are accountable for what enters the question bank.\n\nProceed?')">
+                Override (allow dump)
+              </button>
+            </form>
+            <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
+              <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <script>
+  (function () {
+    const filesSection = document.getElementById("filesSection");
+    const container = document.getElementById("filesContainer");
+    const countEl = document.getElementById("filesCount");
+    const pill = document.getElementById("livePill");
+    if (!filesSection || !container) return;
+    const isAdmin = filesSection.getAttribute("data-is-admin") === "true";
+
+    function esc(s) {
+      if (s == null) return "";
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+    function fmtSize(b) { return (b / 1024.0).toFixed(1) + " KB"; }
+    function fmtTime(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      const pad = n => String(n).padStart(2, "0");
+      return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+             " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+    function statusPill(s) {
+      const map = {
+        PENDING:    ["pending", "Pending"],
+        PROCESSING: ["processing", "Extracting…"],
+        DONE:       ["done", "Done"],
+        FAILED:     ["failed", "Failed"],
+        SKIPPED:    ["skipped", "Skipped"]
+      };
+      const m = map[s] || ["skipped", esc(s)];
+      return '<span class="pill ' + m[0] + '">' + m[1] + '</span>';
+    }
+    function questionsCell(r) {
+      if (r.questionsImported == null) return '<span class="muted">—</span>';
+      let out = "<strong>" + esc(r.questionsImported) + "</strong> imported";
+      if (r.questionsExtracted != null && r.questionsExtracted > r.questionsImported) {
+        out += " / " + esc(r.questionsExtracted) + " extracted";
+      }
+      return out;
+    }
+    function actionsCell(r) {
+      let html = "";
+      if (r.status === "FAILED" || r.status === "SKIPPED") {
+        html += '<form method="post" action="/uploads/' + r.id + '/retry" style="display:inline">' +
+                '<button class="btn btn-sm" type="submit">Retry</button></form> ';
+      }
+      if (isAdmin && r.status === "SKIPPED" && r.error && r.error.indexOf("dump") !== -1) {
+        html += '<form method="post" action="/uploads/' + r.id + '/override-dump-check" style="display:inline">' +
+                '<button class="btn btn-warning btn-sm" type="submit" ' +
+                'onclick="return confirm(\'Override dump-check?\\n\\nClaude flagged this file as possibly leaked/paid real-exam content. Overriding will run extraction anyway and add the resulting questions as PENDING for your review.\\n\\nOnly do this if you are certain the material is legitimately written practice content. You are accountable for what enters the question bank.\\n\\nProceed?\')">' +
+                'Override (allow dump)</button></form> ';
+      }
+      html += '<form method="post" action="/uploads/' + r.id + '/delete" style="display:inline">' +
+              '<button class="btn btn-danger btn-sm" type="submit">Delete</button></form>';
+      return html;
+    }
+    function render(rows) {
+      if (countEl) countEl.textContent = "(" + rows.length + ")";
+      if (!rows.length) {
+        container.innerHTML = '<div class="empty">No uploads yet.</div>';
+        return;
+      }
+      let html = '<table class="admin-table"><thead><tr>' +
+                 '<th>Name</th><th>Size</th><th>Uploaded</th>' +
+                 (isAdmin ? '<th>Uploaded by</th>' : '') +
+                 '<th>Status</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead><tbody>';
+      for (const r of rows) {
+        const errorHtml = r.error ? '<div class="row-error">' + esc(r.error) + '</div>' : '';
+        html += '<tr>' +
+          '<td><a href="/uploads/' + r.id + '/download">' + esc(r.originalName) + '</a>' + errorHtml + '</td>' +
+          '<td>' + fmtSize(r.sizeBytes) + '</td>' +
+          '<td>' + fmtTime(r.uploadedAt) + '</td>' +
+          (isAdmin ? '<td>' + esc(r.uploadedByEmail || "—") + '</td>' : '') +
+          '<td>' + statusPill(r.status) + '</td>' +
+          '<td>' + questionsCell(r) + '</td>' +
+          '<td class="actions-col">' + actionsCell(r) + '</td>' +
+        '</tr>';
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    let pollTimer = null;
+    let inFlight = false;
+
+    async function pollOnce() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const res = await fetch("/uploads/api/status", { credentials: "same-origin", cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        render(data.rows || []);
+        if (pill) pill.classList.add("active");
+      } catch (e) {
+        // network blip — leave the existing rows in place
+      } finally {
+        inFlight = false;
+      }
+    }
+    function start() {
+      if (pollTimer) return;
+      pollOnce(); // immediate refresh
+      pollTimer = setInterval(pollOnce, 4000);
+    }
+    function stop() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) stop();
+      else start();
+    });
+    window.addEventListener("pagehide", stop);
+    start();
+  })();
+  </script>
+</main>
+</body>
+</html>

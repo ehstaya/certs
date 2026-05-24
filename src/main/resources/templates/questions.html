@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Question Review — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .q-card { border: 1px solid var(--gray-200, #e5e7eb); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: #fff; }
+    .q-meta { font-size: .85rem; color: var(--gray-500, #6b7280); margin-bottom: 8px; }
+    .q-text { font-weight: 600; margin: 0 0 10px 0; }
+    .q-choices { list-style: none; padding: 0; margin: 0 0 10px 0; }
+    .q-choices li { padding: 4px 0; }
+    .q-choices .correct { font-weight: 600; }
+    .q-choices .correct::before { content: "✓ "; color: var(--green-700, #047857); }
+    .q-expl { font-size: .9rem; color: var(--gray-700, #374151); white-space: pre-wrap; margin: 8px 0; }
+    .q-actions { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+    .q-exam-pill {
+      display: inline-block;
+      background: var(--brand-tint, #EAF5FE);
+      color: var(--brand-navy, #032D60);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: .8rem;
+      margin-right: 6px;
+    }
+    .q-dup-warn {
+      background: #fff3cd;
+      color: #856404;
+      border-left: 3px solid #f0ad4e;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin: 8px 0;
+      font-size: .9rem;
+    }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{
+      if(!d||!d.authenticated) return;
+      const el=document.getElementById("userBadge");
+      if(!el) return;
+      const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+      el.textContent=name+" ("+(d.role||"USER")+")";
+    });
+})();
+</script>
+
+<main class="admin-wrap">
+  <h1>Question review</h1>
+  <p class="muted">
+    Questions imported by the crawler agents (<code>push</code>) land here as <strong>pending</strong>.
+    They've already passed the agents' automated quality gate; review them, then <strong>approve</strong> (adds to the live quiz),
+    <strong>reject</strong> (hides it), or <strong>edit</strong> first.
+    Approved: <span th:text="${approvedCount}">0</span> &nbsp;|&nbsp;
+    Pending: <span th:text="${pendingCount}">0</span> &nbsp;|&nbsp;
+    Retired: <span th:text="${retiredCount}">0</span>
+    &nbsp;·&nbsp; <a href="/admin/questions/approved">Browse / edit / retire approved →</a>
+    &nbsp;·&nbsp; <a href="/admin/questions/retired">Retired queue →</a>
+  </p>
+
+  <p class="muted" th:if="${param.approved}">Question approved — it's now in the live quiz.</p>
+  <p class="muted" th:if="${param.rejected}">Question rejected.</p>
+  <p class="muted" th:if="${param.updated}">Question updated.</p>
+  <p class="banner banner-ok" th:if="${classifyMessage}" th:text="${classifyMessage}">classify message</p>
+  <p class="banner banner-ok" th:if="${enrichMessage}" th:text="${enrichMessage}">enrich message</p>
+
+  <section class="admin-section">
+    <h2>Topic classification</h2>
+    <p class="muted">Assign each approved question to one of the official exam topics so session sampling matches the
+      real exam mix. Uses Claude Haiku (~$0.15 for 250 questions) and only touches untagged rows — safe to re-run.</p>
+    <form method="post" action="/admin/questions/classify-topics" style="display:inline; margin-right: 8px;">
+      <input type="hidden" name="examSlug" value="salesforce-admin" />
+      <button class="btn btn-primary btn-sm" type="submit"
+              onclick="return confirm('Classify every untagged Salesforce-Admin question via Claude Haiku? Bounded by the daily Anthropic budget.')">
+        Classify Salesforce-Admin topics
+      </button>
+    </form>
+    <form method="post" action="/admin/questions/classify-topics" style="display:inline; margin-right: 8px;">
+      <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
+      <button class="btn btn-sm" type="submit">Classify MCPA topics</button>
+    </form>
+    <form method="post" action="/admin/questions/classify-topics" style="display:inline; margin-right: 8px;">
+      <input type="hidden" name="examSlug" value="agentforce-specialist" />
+      <button class="btn btn-sm" type="submit">Classify Agentforce topics</button>
+    </form>
+    <form method="post" action="/admin/questions/classify-topics" style="display:inline;">
+      <input type="hidden" name="examSlug" value="data-cloud-consultant" />
+      <button class="btn btn-sm" type="submit">Classify Data-Cloud topics</button>
+    </form>
+  </section>
+
+  <section class="admin-section">
+    <h2>Explanation backfill</h2>
+    <p class="muted">For questions that landed without an explanation (e.g. uploaded screenshots that only showed
+      the prompt + choices), generate a 2–3 sentence explanation + a vendor doc link via Claude Haiku.
+      References point at the canonical site for each exam: <code>help.salesforce.com</code>,
+      <code>trailhead.salesforce.com</code>, <code>docs.mulesoft.com</code>, etc.
+      Only touches rows missing both — safe to re-run. Bounded by the daily Anthropic budget.</p>
+    <form method="post" action="/admin/questions/enrich-explanations" style="display:inline; margin-right: 8px;">
+      <input type="hidden" name="examSlug" value="salesforce-admin" />
+      <button class="btn btn-primary btn-sm" type="submit"
+              onclick="return confirm('Enrich missing Salesforce-Admin explanations from help.salesforce.com / Trailhead? Bounded by the daily Anthropic budget.')">
+        Enrich Salesforce-Admin
+      </button>
+    </form>
+    <form method="post" action="/admin/questions/enrich-explanations" style="display:inline; margin-right: 8px;">
+      <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
+      <button class="btn btn-sm" type="submit"
+              onclick="return confirm('Enrich MCPA explanations from docs.mulesoft.com? Bounded by the daily Anthropic budget.')">
+        Enrich MCPA
+      </button>
+    </form>
+    <form method="post" action="/admin/questions/enrich-explanations" style="display:inline; margin-right: 8px;">
+      <input type="hidden" name="examSlug" value="agentforce-specialist" />
+      <button class="btn btn-sm" type="submit">Enrich Agentforce</button>
+    </form>
+    <form method="post" action="/admin/questions/enrich-explanations" style="display:inline;">
+      <input type="hidden" name="examSlug" value="data-cloud-consultant" />
+      <button class="btn btn-sm" type="submit">Enrich Data-Cloud</button>
+    </form>
+  </section>
+
+  <section class="admin-section">
+    <h2>Pending <span class="count" th:text="'(' + ${pendingCount} + ')'">(0)</span></h2>
+    <div class="empty" th:if="${#lists.isEmpty(pending)}">Nothing pending review.</div>
+
+    <div class="q-card" th:each="q : ${pending}">
+      <div class="q-meta">
+        <span class="q-exam-pill" th:if="${q.exam != null}" th:text="${q.exam.name}">Exam name</span>
+        <span>#<span th:text="${q.number}">0</span></span> ·
+        <span th:text="${q.type}">SINGLE</span>
+        <span th:if="${q.sourceUrl != null}"> · source: <a th:href="${q.sourceUrl}" th:text="${q.sourceUrl}" target="_blank" rel="noopener">source</a></span>
+        <span th:if="${q.helpUrl != null and q.helpUrl != ''}"> · help: <a th:href="${q.helpUrl}" target="_blank" rel="noopener">link</a></span>
+      </div>
+      <p class="q-text" th:text="${q.text}">Question text</p>
+      <div class="q-dup-warn" th:if="${q.duplicateOfId != null}">
+        ⚠ Possible duplicate of an existing question (#<span th:text="${q.duplicateOfId}">0</span>).
+        Same text was already in the bank — admin should compare and decide whether to keep this as a variant or reject.
+      </div>
+      <ul class="q-choices">
+        <li th:each="c : ${q.choices}" th:classappend="${c.correct} ? 'correct' : ''">
+          <span th:text="${c.label}">A</span>. <span th:text="${c.text}">choice text</span>
+        </li>
+      </ul>
+      <div class="q-expl" th:if="${q.explanation != null and q.explanation != ''}" th:text="${q.explanation}">Explanation</div>
+      <div class="q-actions">
+        <form method="post" th:action="@{|/admin/questions/${q.id}/approve|}" style="display:inline">
+          <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+        </form>
+        <a class="btn btn-sm" th:href="@{|/admin/questions/${q.id}/edit|}">Edit</a>
+        <form method="post" th:action="@{|/admin/questions/${q.id}/reject|}" style="display:inline">
+          <button class="btn btn-danger btn-sm" type="submit">Reject</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section class="admin-section" th:unless="${recentImports == null or #lists.isEmpty(recentImports)}">
+    <h2>Recent import activity</h2>
+    <p class="muted">Every push from the crawler agent is logged here, including questions that
+      were <strong>skipped because they already exist in this exam</strong>. If you re-upload
+      study material that produced the same questions, you'll see them appear in this log with
+      <code>imported=0</code> rather than as new pending items — that's expected, not a bug.</p>
+    <table class="admin-table">
+      <thead><tr><th>When (UTC)</th><th>Exam</th><th>Imported</th><th>Skipped</th><th>Reason snippets</th></tr></thead>
+      <tbody>
+        <tr th:each="e : ${recentImports}"
+            th:classappend="${e.allSkipped()} ? 'row-warn' : ''">
+          <td th:text="${#temporals.format(e.occurredAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td><code th:text="${e.examSlug}">slug</code></td>
+          <td th:text="${e.imported}">0</td>
+          <td th:text="${e.skipped}">0</td>
+          <td>
+            <details th:if="${not #lists.isEmpty(e.skippedTexts)}">
+              <summary th:text="'show ' + ${#lists.size(e.skippedTexts)} + ' skipped'">show</summary>
+              <ul style="margin: 6px 0 0 16px; padding: 0;">
+                <li th:each="t : ${e.skippedTexts}" th:text="${t}">snippet — reason</li>
+              </ul>
+            </details>
+            <span th:if="${#lists.isEmpty(e.skippedTexts)}" class="muted">—</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="admin-section" th:unless="${#lists.isEmpty(recentApproved)}">
+    <h2>Recently approved</h2>
+    <table class="admin-table">
+      <thead><tr><th>#</th><th>Type</th><th>Question</th></tr></thead>
+      <tbody>
+        <tr th:each="q : ${recentApproved}">
+          <td th:text="${q.number}">0</td>
+          <td th:text="${q.type}">SINGLE</td>
+          <td th:text="${#strings.abbreviate(q.text, 120)}">…</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Choose a practice exam</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Certification Practice Playground</div>
+    <div class="topbar-actions" id="topbarActions">
+      <a class="topbar-link" href="/">Exams</a>
+      <a class="topbar-link" href="/my/reports">My reports</a>
+      <a class="topbar-link" href="/uploads">Add questions</a>
+      <a class="topbar-link admin-only" href="/admin" style="display:none">Users</a>
+      <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions for Review</a>
+      <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+      <a class="topbar-link" href="/change-password">Change password</a>
+      <span class="topbar-user" id="userBadge"></span>
+      <form method="post" action="/logout" style="display:inline">
+        <button type="submit" class="topbar-link as-btn">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="picker">
+    <div class="picker-head">
+      <h1 class="picker-title">Choose a practice exam</h1>
+      <p class="picker-subtitle">Pick a certification track to start a timed practice session. Your progress and timer are tracked per exam.</p>
+    </div>
+    <div id="examGrid" class="exam-grid">
+      <div class="picker-empty" id="examLoading">Loading exams…</div>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      function esc(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+          return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+        });
+      }
+
+      async function loadUser() {
+        try {
+          const res = await fetch("/api/me", { credentials: "same-origin" });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (!data.authenticated) { window.location.href = "/login"; return; }
+          const name = data.fullName && data.fullName.trim() ? data.fullName : data.email;
+          const role = data.role || "USER";
+          const badge = document.getElementById("userBadge");
+          if (badge) badge.textContent = name + " (" + role + ")";
+          if (role === "ADMIN") {
+            document.querySelectorAll(".admin-only").forEach(el => { el.style.display = ""; });
+          }
+        } catch (e) { /* header just stays blank */ }
+      }
+
+      async function loadExams() {
+        const grid = document.getElementById("examGrid");
+        try {
+          const res = await fetch("/api/exams", { credentials: "same-origin" });
+          if (res.status === 401 || res.status === 403) { window.location.href = "/login"; return; }
+          if (!res.ok) throw new Error("Failed to load exams");
+          const exams = await res.json();
+          if (!Array.isArray(exams) || exams.length === 0) {
+            grid.innerHTML = '<div class="picker-empty">No exams available yet. An admin can add one via the import API.</div>';
+            return;
+          }
+          grid.innerHTML = "";
+          exams.forEach(function (ex) {
+            const a = document.createElement("a");
+            a.className = "exam-card";
+            a.href = "/topic-info.html?exam=" + encodeURIComponent(ex.slug);
+            a.innerHTML =
+              '<div class="exam-card-body">' +
+                '<h2 class="exam-card-name">' + esc(ex.name) + '</h2>' +
+                '<p class="exam-card-desc">' + esc(ex.description || "") + '</p>' +
+              '</div>' +
+              '<div class="exam-card-meta">' +
+                '<span class="exam-chip">' + ex.questionsPerSession + ' questions / session</span>' +
+                '<span class="exam-chip">' + ex.durationMinutes + ' min</span>' +
+                '<span class="exam-chip">' + ex.questionCount + ' in bank</span>' +
+              '</div>' +
+              '<div class="exam-card-cta">Start practice ›</div>';
+            grid.appendChild(a);
+          });
+        } catch (e) {
+          grid.innerHTML = '<div class="picker-empty">Could not load exams: ' + esc(e.message) + '</div>';
+        }
+      }
+
+      loadUser();
+      loadExams();
+    })();
+  </script>
+</body>
+</html>

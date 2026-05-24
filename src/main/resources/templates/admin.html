@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User Administration — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{
+      if(!d||!d.authenticated) return;
+      const el=document.getElementById("userBadge");
+      if(!el) return;
+      const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+      el.textContent=name+" ("+(d.role||"USER")+")";
+    });
+})();
+</script>
+
+<main class="admin-wrap">
+  <h1>User administration</h1>
+  <p class="muted">Approve new registrations. Approving a user generates a temporary password and emails it to them; they will be required to change it on first sign-in.</p>
+
+  <p class="banner banner-error" th:if="${adminError}" th:text="${adminError}">error</p>
+  <p class="banner banner-ok"    th:if="${adminMessage}" th:text="${adminMessage}">message</p>
+  <p class="banner banner-ok"    th:if="${param.promoted}">User promoted to admin. They've been emailed about the new access.</p>
+  <p class="banner banner-ok"    th:if="${param.demoted}">Admin demoted to regular user.</p>
+
+  <section class="issued-card" th:if="${issuedPassword != null}">
+    <h2 th:if="${issuedReason == 'approved'}">Account approved — share these credentials</h2>
+    <h2 th:if="${issuedReason == 'reset'}">Password reset — share these credentials</h2>
+    <h2 th:if="${issuedReason == 'created'}">User created — share these credentials</h2>
+    <p class="issued-hint">
+      Copy &amp; paste this into Slack / DM. The temporary password is shown <strong>once</strong> —
+      reload this page and it's gone. The user will be forced to change it on first sign-in.
+    </p>
+    <table class="issued-table">
+      <tr><th>Email</th><td><code th:text="${issuedEmail}">user@example.com</code></td></tr>
+      <tr th:if="${issuedFullName != null and not #strings.isEmpty(issuedFullName)}">
+        <th>Name</th><td th:text="${issuedFullName}">Name</td>
+      </tr>
+      <tr><th>Sign-in URL</th><td><code>https://sfquiz-myaqub-ps-3c458a1f583d.herokuapp.com/login</code></td></tr>
+      <tr><th>Temporary password</th><td><code class="issued-pw" th:text="${issuedPassword}">TempPass123</code></td></tr>
+    </table>
+  </section>
+
+  <section class="admin-section">
+    <h2>Add a user manually</h2>
+    <p class="muted">Create an ACTIVE account in one step. A temp password is generated and shown here once — copy &amp; share via Slack. The user must change it on first sign-in.</p>
+    <form method="post" action="/admin/users/new" class="add-user-form">
+      <label>
+        <span>Email *</span>
+        <input type="email" name="email" required autocomplete="off" placeholder="teammate@salesforce.com" />
+      </label>
+      <label>
+        <span>Full name</span>
+        <input type="text" name="fullName" autocomplete="off" placeholder="Jane Doe" />
+      </label>
+      <label>
+        <span>Role *</span>
+        <select name="role" required>
+          <option value="USER">User — practices tests, can contribute questions</option>
+          <option value="VERIFIER">Verifier — votes with required reasons for quality feedback</option>
+          <option value="ADMIN">Admin — full management access</option>
+        </select>
+      </label>
+      <button class="btn btn-primary" type="submit">Create user</button>
+    </form>
+  </section>
+
+  <section class="admin-section">
+    <h2>Pending approval <span class="count" th:text="'(' + ${#lists.size(pending)} + ')'">(0)</span></h2>
+    <div class="empty" th:if="${#lists.isEmpty(pending)}">No pending registrations.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(pending)}">
+      <thead><tr><th>Email</th><th>Name</th><th>Registered</th><th class="actions-col">Actions</th></tr></thead>
+      <tbody>
+        <tr th:each="u : ${pending}">
+          <td th:text="${u.email}">user@example.com</td>
+          <td th:text="${u.fullName}">Name</td>
+          <td th:text="${#temporals.format(u.createdAt, 'yyyy-MM-dd HH:mm')}">2024-01-01 12:00</td>
+          <td class="actions-col">
+            <form method="post" th:action="@{|/admin/users/${u.id}/approve|}" style="display:inline">
+              <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+            </form>
+            <form method="post" th:action="@{|/admin/users/${u.id}/reject|}" style="display:inline">
+              <button class="btn btn-danger btn-sm" type="submit">Reject</button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="admin-section">
+    <h2>Active users <span class="count" th:text="'(' + ${#lists.size(active)} + ')'">(0)</span></h2>
+    <div class="empty" th:if="${#lists.isEmpty(active)}">No active users.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(active)}">
+      <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Approved</th><th>Pending pw change</th><th class="actions-col">Actions</th></tr></thead>
+      <tbody>
+        <tr th:each="u : ${active}">
+          <td th:text="${u.email}">user@example.com</td>
+          <td th:text="${u.fullName}">Name</td>
+          <td th:text="${u.role}">USER</td>
+          <td th:text="${u.approvedAt != null ? #temporals.format(u.approvedAt, 'yyyy-MM-dd HH:mm') : '—'}">—</td>
+          <td th:text="${u.mustChangePassword} ? 'Yes' : 'No'">No</td>
+          <td class="actions-col">
+            <!-- USER role: can promote to admin, can disable -->
+            <form method="post" th:action="@{|/admin/users/${u.id}/promote|}" style="display:inline" th:if="${u.role.name() != 'ADMIN'}">
+              <button class="btn btn-primary btn-sm" type="submit"
+                      title="Grant admin access — they'll be able to approve questions and manage users."
+                      onclick="return confirm('Promote this user to admin? They will be able to approve questions and manage users.')">
+                Promote to admin
+              </button>
+            </form>
+            <form method="post" th:action="@{|/admin/users/${u.id}/reset-password|}" style="display:inline">
+              <button class="btn btn-sm" type="submit"
+                      title="Generate a new temp password. The user will be forced to change it on next sign-in."
+                      onclick="return confirm('Generate a new temporary password for ' + this.form.getAttribute('data-email') + '? Their current password will stop working immediately.')"
+                      th:attr="data-email=${u.email}">
+                Reset password
+              </button>
+            </form>
+            <form method="post" th:action="@{|/admin/users/${u.id}/disable|}" style="display:inline" th:if="${u.role.name() != 'ADMIN'}">
+              <button class="btn btn-warning btn-sm" type="submit">Disable</button>
+            </form>
+            <!-- ADMIN role: can demote (server-side guards prevent demoting self or the last admin) -->
+            <form method="post" th:action="@{|/admin/users/${u.id}/demote|}" style="display:inline" th:if="${u.role.name() == 'ADMIN'}">
+              <button class="btn btn-warning btn-sm" type="submit"
+                      onclick="return confirm('Demote this admin back to a regular user?')">
+                Demote
+              </button>
+            </form>
+            <!-- Hard delete — works for any role. Server guards self-delete + last-admin-delete. -->
+            <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline">
+              <button class="btn btn-danger btn-sm" type="submit"
+                      th:attr="data-email=${u.email},data-role=${u.role}"
+                      onclick="return confirm('Permanently delete ' + this.form.getAttribute('data-email') + ' (' + this.form.getAttribute('data-role') + ')?\n\nThis deletes the account and ALL their data — test attempts, votes, password-reset tokens. Cannot be undone.\n\nIf you just want to revoke access without losing data, click Disable instead.')">
+                Delete
+              </button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="admin-section" th:unless="${#lists.isEmpty(rejected)}">
+    <h2>Rejected <span class="count" th:text="'(' + ${#lists.size(rejected)} + ')'">(0)</span></h2>
+    <table class="admin-table">
+      <thead><tr><th>Email</th><th>Name</th><th>Registered</th><th class="actions-col">Actions</th></tr></thead>
+      <tbody>
+        <tr th:each="u : ${rejected}">
+          <td th:text="${u.email}">user@example.com</td>
+          <td th:text="${u.fullName}">Name</td>
+          <td th:text="${#temporals.format(u.createdAt, 'yyyy-MM-dd HH:mm')}">2024-01-01 12:00</td>
+          <td class="actions-col">
+            <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline">
+              <button class="btn btn-danger btn-sm" type="submit"
+                      th:attr="data-email=${u.email}"
+                      onclick="return confirm('Permanently delete the rejected registration for ' + this.form.getAttribute('data-email') + '? Cannot be undone.')">
+                Delete
+              </button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="admin-section" th:unless="${#lists.isEmpty(disabled)}">
+    <h2>Disabled <span class="count" th:text="'(' + ${#lists.size(disabled)} + ')'">(0)</span></h2>
+    <table class="admin-table">
+      <thead><tr><th>Email</th><th>Name</th><th>Registered</th><th class="actions-col">Actions</th></tr></thead>
+      <tbody>
+        <tr th:each="u : ${disabled}">
+          <td th:text="${u.email}">user@example.com</td>
+          <td th:text="${u.fullName}">Name</td>
+          <td th:text="${#temporals.format(u.createdAt, 'yyyy-MM-dd HH:mm')}">2024-01-01 12:00</td>
+          <td class="actions-col">
+            <form method="post" th:action="@{|/admin/users/${u.id}/reactivate|}" style="display:inline">
+              <button class="btn btn-primary btn-sm" type="submit">Reactivate</button>
+            </form>
+            <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline">
+              <button class="btn btn-danger btn-sm" type="submit"
+                      th:attr="data-email=${u.email}"
+                      onclick="return confirm('Permanently delete the disabled account for ' + this.form.getAttribute('data-email') + ' and all their data (attempts, votes)? Cannot be undone.')">
+                Delete
+              </button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

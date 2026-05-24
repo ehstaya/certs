@@ -1,0 +1,142 @@
+{
+  "slug": "aws-saa",
+  "name": "AWS Certified Solutions Architect – Associate (SAA-C03)",
+  "description": "Design resilient, high-performing, secure, and cost-optimized architectures on AWS.",
+  "questionsPerSession": 10,
+  "durationMinutes": 130,
+  "sortOrder": 20,
+  "questions": [
+    {
+      "n": 1,
+      "type": "SINGLE",
+      "text": "A company needs durable object storage for static website assets that must be served to users worldwide with low latency. Which combination of AWS services is most appropriate?",
+      "helpUrl": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteHosting.html",
+      "explanation": "Amazon S3 provides 11 nines of durability for object storage and integrates natively with CloudFront, a global CDN that caches content at edge locations to reduce latency for worldwide users.",
+      "choices": [
+        {"label": "A", "text": "Amazon S3 with Amazon CloudFront", "correct": true},
+        {"label": "B", "text": "Amazon EBS with an Application Load Balancer", "correct": false},
+        {"label": "C", "text": "Amazon EFS with AWS Global Accelerator", "correct": false},
+        {"label": "D", "text": "Amazon FSx with Amazon Route 53", "correct": false}
+      ]
+    },
+    {
+      "n": 2,
+      "type": "SINGLE",
+      "text": "Which AWS service should be used to decouple a web tier from a batch-processing worker tier so that messages are not lost if a worker is unavailable?",
+      "helpUrl": "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html",
+      "explanation": "Amazon SQS is a fully managed message queue that decouples components. Messages persist in the queue until a worker successfully processes and deletes them, preventing loss when workers are down.",
+      "choices": [
+        {"label": "A", "text": "Amazon SNS", "correct": false},
+        {"label": "B", "text": "Amazon SQS", "correct": true},
+        {"label": "C", "text": "AWS Step Functions", "correct": false},
+        {"label": "D", "text": "Amazon Kinesis Data Firehose", "correct": false}
+      ]
+    },
+    {
+      "n": 3,
+      "type": "MULTI",
+      "text": "Which TWO actions improve the availability of an Amazon RDS database?",
+      "helpUrl": "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html",
+      "explanation": "Enabling Multi-AZ provisions a synchronous standby in another Availability Zone for automatic failover. Read replicas offload read traffic and can be promoted, both increasing availability.",
+      "choices": [
+        {"label": "A", "text": "Enable Multi-AZ deployment", "correct": true},
+        {"label": "B", "text": "Create one or more read replicas", "correct": true},
+        {"label": "C", "text": "Switch the instance to a burstable T-class type", "correct": false},
+        {"label": "D", "text": "Disable automated backups", "correct": false},
+        {"label": "E", "text": "Store the database password in plaintext user data", "correct": false}
+      ]
+    },
+    {
+      "n": 4,
+      "type": "SINGLE",
+      "text": "An application running on EC2 needs to access an S3 bucket. What is the AWS best-practice way to grant this access?",
+      "helpUrl": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-ec2.html",
+      "explanation": "Attaching an IAM role to the EC2 instance provides temporary, automatically rotated credentials. Hardcoding access keys is discouraged because they are long-lived and easily leaked.",
+      "choices": [
+        {"label": "A", "text": "Embed IAM user access keys in the application code", "correct": false},
+        {"label": "B", "text": "Attach an IAM role to the EC2 instance", "correct": true},
+        {"label": "C", "text": "Store root account credentials in environment variables", "correct": false},
+        {"label": "D", "text": "Make the S3 bucket public", "correct": false}
+      ]
+    },
+    {
+      "n": 5,
+      "type": "SINGLE",
+      "text": "Which storage class is most cost-effective for data that is accessed once or twice a year and must be retrievable within 12 hours?",
+      "helpUrl": "https://aws.amazon.com/s3/storage-classes/",
+      "explanation": "S3 Glacier Deep Archive is the lowest-cost class, designed for long-term retention with retrieval times of up to 12 hours, matching rare-access archival needs.",
+      "choices": [
+        {"label": "A", "text": "S3 Standard", "correct": false},
+        {"label": "B", "text": "S3 Standard-IA", "correct": false},
+        {"label": "C", "text": "S3 Glacier Deep Archive", "correct": true},
+        {"label": "D", "text": "S3 One Zone-IA", "correct": false}
+      ]
+    },
+    {
+      "n": 6,
+      "type": "SINGLE",
+      "text": "A solutions architect must allow an Auto Scaling group to scale based on the number of messages waiting in an SQS queue. Which metric should drive the scaling policy?",
+      "helpUrl": "https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-using-sqs-queue.html",
+      "explanation": "A target tracking policy on a backlog-per-instance metric derived from ApproximateNumberOfMessagesVisible scales the group with the queue depth.",
+      "choices": [
+        {"label": "A", "text": "CPUUtilization of the queue", "correct": false},
+        {"label": "B", "text": "ApproximateNumberOfMessagesVisible", "correct": true},
+        {"label": "C", "text": "NetworkIn of the SQS endpoint", "correct": false},
+        {"label": "D", "text": "HealthyHostCount", "correct": false}
+      ]
+    },
+    {
+      "n": 7,
+      "type": "SINGLE",
+      "text": "Which service provides a managed NoSQL database with single-digit millisecond latency and automatic scaling?",
+      "helpUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html",
+      "explanation": "Amazon DynamoDB is a fully managed key-value and document NoSQL database delivering consistent single-digit millisecond performance with on-demand or auto scaling.",
+      "choices": [
+        {"label": "A", "text": "Amazon Redshift", "correct": false},
+        {"label": "B", "text": "Amazon Aurora", "correct": false},
+        {"label": "C", "text": "Amazon DynamoDB", "correct": true},
+        {"label": "D", "text": "Amazon Neptune", "correct": false}
+      ]
+    },
+    {
+      "n": 8,
+      "type": "SINGLE",
+      "text": "To meet a requirement that data in transit between an on-premises data center and a VPC must not traverse the public internet, which connection should be used?",
+      "helpUrl": "https://docs.aws.amazon.com/directconnect/latest/UserGuide/Welcome.html",
+      "explanation": "AWS Direct Connect provides a dedicated private network connection from on-premises to AWS, keeping traffic off the public internet for consistent latency and security.",
+      "choices": [
+        {"label": "A", "text": "Site-to-Site VPN over the internet", "correct": false},
+        {"label": "B", "text": "AWS Direct Connect", "correct": true},
+        {"label": "C", "text": "Internet Gateway", "correct": false},
+        {"label": "D", "text": "NAT Gateway", "correct": false}
+      ]
+    },
+    {
+      "n": 9,
+      "type": "MULTI",
+      "text": "Which TWO design choices help optimize cost for a fault-tolerant batch workload that can tolerate interruptions?",
+      "helpUrl": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-spot-instances.html",
+      "explanation": "Spot Instances offer up to 90% savings for interruptible workloads. Right-sizing instances avoids paying for unused capacity. Reserved Instances suit steady-state, not interruptible batch.",
+      "choices": [
+        {"label": "A", "text": "Use EC2 Spot Instances", "correct": true},
+        {"label": "B", "text": "Right-size the instance types to the workload", "correct": true},
+        {"label": "C", "text": "Run everything on the largest available instance", "correct": false},
+        {"label": "D", "text": "Disable Auto Scaling", "correct": false},
+        {"label": "E", "text": "Use On-Demand for all capacity permanently", "correct": false}
+      ]
+    },
+    {
+      "n": 10,
+      "type": "SINGLE",
+      "text": "A company wants to run containers without managing the underlying EC2 instances. Which service meets this requirement?",
+      "helpUrl": "https://docs.aws.amazon.com/AmazonECS/latest/userguide/what-is-fargate.html",
+      "explanation": "AWS Fargate is a serverless compute engine for containers that removes the need to provision and manage EC2 instances for ECS or EKS workloads.",
+      "choices": [
+        {"label": "A", "text": "Amazon EC2 with a launch template", "correct": false},
+        {"label": "B", "text": "AWS Fargate", "correct": true},
+        {"label": "C", "text": "Amazon Lightsail", "correct": false},
+        {"label": "D", "text": "AWS Batch on managed EC2", "correct": false}
+      ]
+    }
+  ]
+}

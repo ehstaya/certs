@@ -1,0 +1,72 @@
+# Internal agent — runs alongside the quiz app (docker-compose.yml).
+#
+# Two services share the same image (`Dockerfile.internal`):
+#
+#   * internal-agent-watcher  — LONG-RUNNING. Polls /uploads and auto-fires
+#                               run+push when a new/changed file appears, so
+#                               admin uploads in the GUI flow into the cert
+#                               app's pending review queue with no manual step.
+#                               Started by default with `up -d`.
+#
+#   * internal-agent          — ONE-SHOT (Compose profile "manual"). Used for
+#                               ad-hoc `run` / `push` / `list` / `runs` from the
+#                               CLI. NOT started by `up -d` — invoke with
+#                               `docker compose run --rm internal-agent <cmd>`.
+#
+# Put secrets in a repo-root .env (compose reads it):
+#     ANTHROPIC_API_KEY=...
+#     QUIZ_APP_ADMIN_EMAIL=admin@local
+#     QUIZ_APP_ADMIN_PASSWORD=<the admin's CURRENT password>
+#     # Only if you're using the optional Drive source:
+#     GOOGLE_DRIVE_FOLDER_ID=<folder id>
+#
+# Bring up everything (GUI + watcher):
+#     docker compose -f docker-compose.yml -f docker-compose.internal.yml up -d --build
+#     # then upload at http://localhost:8095/admin/uploads and watch the watcher logs:
+#     docker compose -f docker-compose.yml -f docker-compose.internal.yml logs -f internal-agent-watcher
+#
+# Manual ad-hoc commands still work:
+#     docker compose -f docker-compose.yml -f docker-compose.internal.yml run --rm internal-agent list
+#     docker compose -f docker-compose.yml -f docker-compose.internal.yml run --rm internal-agent runs
+#     docker compose -f docker-compose.yml -f docker-compose.internal.yml run --rm internal-agent run --source drive --use-llm
+
+x-internal-agent-base: &internal-agent-base
+  build:
+    context: ./sf-cert-crawler
+    dockerfile: Dockerfile.internal
+  depends_on:
+    app:
+      condition: service_started
+  environment:
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    QUIZ_APP_URL: http://app:8095
+    QUIZ_APP_ADMIN_EMAIL: ${QUIZ_APP_ADMIN_EMAIL:-admin@local}
+    QUIZ_APP_ADMIN_PASSWORD: ${QUIZ_APP_ADMIN_PASSWORD:-}
+    LOCAL_SOURCE_DIR: /uploads
+    GOOGLE_SERVICE_ACCOUNT_FILE: /secrets/google-sa.json
+    GOOGLE_DRIVE_FOLDER_ID: ${GOOGLE_DRIVE_FOLDER_ID:-}
+  volumes:
+    - sf-internal-data:/data
+    - sfquiz-uploads:/uploads:ro
+    # For the Drive source: uncomment the next line and put a service-account
+    # JSON at ./google-sa.json (or change the host path).
+    # - ./google-sa.json:/secrets/google-sa.json:ro
+
+services:
+  internal-agent-watcher:
+    <<: *internal-agent-base
+    container_name: sf-internal-agent-watcher
+    restart: unless-stopped
+    # Long-running: poll /uploads every 20s; when a new/changed file shows up,
+    # run extract+push automatically. Idle cycles cost ~$0 (no API calls).
+    command: ["watch", "--use-llm", "--interval", "20"]
+
+  internal-agent:
+    <<: *internal-agent-base
+    container_name: sf-internal-agent
+    restart: "no"
+    profiles: ["manual"]   # not started by `up`; invoke with `docker compose run --rm`
+
+volumes:
+  sf-internal-data:
+  sfquiz-uploads:

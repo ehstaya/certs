@@ -1,0 +1,11 @@
+{
+  "slug": "mulesoft-platform-architect",
+  "name": "MuleSoft Certified Platform Architect",
+  "description": "Architect API-led integrations on the Anypoint Platform.",
+  "questionsPerSession": 60,
+  "durationMinutes": 120,
+  "passingScorePercent": 70,
+  "sortOrder": 30,
+  "active": true,
+  "questions": []
+}

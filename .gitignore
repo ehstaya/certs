@@ -1,0 +1,53 @@
+# --- Secrets / local config ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*-credentials.json
+
+# --- Java / Maven build output ---
+target/
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# --- IDE / editor ---
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Salesforce DX / local tooling state ---
+.sfdx/
+.mcp.json
+.claude/
+.qa_preview/
+
+# --- sf-cert-crawler (Python project) ---
+sf-cert-crawler/.venv/
+sf-cert-crawler/.pytest_cache/
+sf-cert-crawler/__pycache__/
+sf-cert-crawler/**/__pycache__/
+sf-cert-crawler/cache/
+sf-cert-crawler/logs/
+sf-cert-crawler/questions.db
+sf-cert-crawler/*.db
+sf-cert-crawler/.env
+
+# --- Python generic ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# --- Heroku local ---
+.heroku/
