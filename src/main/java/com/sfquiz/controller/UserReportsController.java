@@ -126,17 +126,28 @@ public class UserReportsController {
         int passingPct = trend.isEmpty()
                 ? exams.stream().filter(e -> e.slug().equals(slug)).findFirst().map(ExamDto::passingScorePercent).orElse(65)
                 : trend.get(0).getPassingScorePercent();
-        // Pre-compute SVG points (x scales by index, y inverted because SVG origin top-left).
-        int chartW = 700, chartH = 220, padL = 40, padR = 16, padT = 16, padB = 28;
+        // X axis is sized in fixed "slots" — minimum 5 attempts, then grown in
+        // steps of 5 as the user accumulates more. The line therefore stays
+        // anchored on the left and the empty slots to the right give a visual
+        // hint of how far they have to go before the axis expands again.
+        int n = trend.size();
+        int slots = Math.max(5, ((n + 4) / 5) * 5);
+
+        int chartW = 720, chartH = 240, padL = 44, padR = 18, padT = 18, padB = 36;
         StringBuilder points = new StringBuilder();
-        List<int[]> circles = new ArrayList<>();
-        for (int i = 0; i < trend.size(); i++) {
-            int n = Math.max(1, trend.size() - 1);
-            int x = padL + (int) Math.round((double) (chartW - padL - padR) * i / n);
+        List<int[]> markers = new ArrayList<>(); // [x, y, score, pass?, attemptNumber]
+        for (int i = 0; i < n; i++) {
+            int x = padL + (int) Math.round((double) (chartW - padL - padR) * i / Math.max(1, slots - 1));
             int y = padT + (int) Math.round((chartH - padT - padB) * (1.0 - trend.get(i).getScorePercent() / 100.0));
             if (i > 0) points.append(' ');
             points.append(x).append(',').append(y);
-            circles.add(new int[]{x, y, trend.get(i).getScorePercent(), trend.get(i).isPassed() ? 1 : 0});
+            markers.add(new int[]{x, y, trend.get(i).getScorePercent(), trend.get(i).isPassed() ? 1 : 0, i + 1});
+        }
+        // Slot ticks (1..slots) along the X axis so users can count attempts.
+        List<int[]> xTicks = new ArrayList<>();
+        for (int i = 0; i < slots; i++) {
+            int x = padL + (int) Math.round((double) (chartW - padL - padR) * i / Math.max(1, slots - 1));
+            xTicks.add(new int[]{x, i + 1});
         }
         int passY = padT + (int) Math.round((chartH - padT - padB) * (1.0 - passingPct / 100.0));
         model.addAttribute("trend", trend);
@@ -150,7 +161,9 @@ public class UserReportsController {
         model.addAttribute("padT", padT);
         model.addAttribute("padB", padB);
         model.addAttribute("polyPoints", points.toString());
-        model.addAttribute("circles", circles);
+        model.addAttribute("markers", markers);
+        model.addAttribute("xTicks", xTicks);
+        model.addAttribute("slots", slots);
         model.addAttribute("passY", passY);
         model.addAttribute("section", "trend");
         return "my-reports-trend";

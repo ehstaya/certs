@@ -10,16 +10,29 @@
     .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
     .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
     .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 320px; background: #fff; }
-    .trend-chart { width: 100%; max-width: 720px; background: #fff; border: 1px solid var(--gray-200, #e5e7eb); border-radius: 8px; padding: 8px; }
+    .trend-chart { width: 100%; max-width: 740px; background: #fff; border: 1px solid var(--gray-200, #e5e7eb); border-radius: 8px; padding: 8px; }
     .trend-axis { stroke: var(--gray-300, #d1d5db); stroke-width: 1; }
+    .trend-axis-faint { stroke: var(--gray-200, #e5e7eb); stroke-width: 1; stroke-dasharray: 2 3; }
     .trend-tick { fill: var(--gray-500, #6b7280); font-size: 10px; }
     .trend-pass-line { stroke: #f59e0b; stroke-width: 2; stroke-dasharray: 6 4; }
     .trend-pass-label { fill: #92400e; font-size: 11px; font-weight: 600; }
-    .trend-line { fill: none; stroke: var(--brand-primary, #0176D3); stroke-width: 2.5; }
-    .trend-pt-pass { fill: #047857; stroke: #fff; stroke-width: 2; }
-    .trend-pt-fail { fill: #b91c1c; stroke: #fff; stroke-width: 2; }
-    .legend { display: flex; gap: 18px; font-size: 13px; color: var(--gray-700, #374151); margin: 8px 0 16px; }
+    /* The score line is the focus — thick brand-blue, rounded joins so the
+       trend reads cleanly even with a single steep dip. */
+    .trend-line {
+      fill: none;
+      stroke: var(--brand-primary, #0176D3);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    /* Hover markers are intentionally tiny: the line carries the story; these
+       are just targets for the <title> tooltips. Pass = green ring, fail = red. */
+    .trend-mark { stroke-width: 2; }
+    .trend-mark-pass { fill: #fff; stroke: #047857; }
+    .trend-mark-fail { fill: #fff; stroke: #b91c1c; }
+    .legend { display: flex; gap: 18px; font-size: 13px; color: var(--gray-700, #374151); margin: 8px 0 16px; flex-wrap: wrap; }
     .legend-swatch { display: inline-block; width: 12px; height: 12px; vertical-align: middle; margin-right: 6px; border-radius: 50%; }
+    .legend-line { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 2px; background: var(--brand-primary, #0176D3); }
   </style>
 </head>
 <body>
@@ -63,8 +76,7 @@
 
   <main class="reports-content">
     <h1>Score trend</h1>
-    <p class="muted">Each dot is one attempt, oldest left → newest right. Dashed amber line is the official passing score.
-      Green dots = pass, red dots = fail.</p>
+    <p class="muted">Your scores plotted in order — oldest left → newest right. The blue line tracks your progress; the dashed amber line is the official passing score. The X axis starts at 5 attempts and grows in increments of 5 as you take more tests, so the line stays anchored on the left and the empty slots ahead show how soon the axis will expand.</p>
 
     <form method="get" action="/my/reports/trend" class="filter-bar">
       <label>
@@ -79,8 +91,8 @@
 
     <div th:unless="${#lists.isEmpty(trend)}">
       <div class="legend">
-        <span><span class="legend-swatch" style="background:#047857"></span>Passed</span>
-        <span><span class="legend-swatch" style="background:#b91c1c"></span>Failed</span>
+        <span><span class="legend-line"></span>Score trend (<strong th:text="${#lists.size(trend)}">0</strong>
+          of <strong th:text="${slots}">5</strong> slots used)</span>
         <span><span class="legend-swatch" style="background:#f59e0b"></span>Passing threshold: <strong th:text="${passingPct + '%'}">65%</strong></span>
       </div>
       <svg class="trend-chart" th:attr="viewBox=|0 0 ${chartW} ${chartH}|" preserveAspectRatio="xMidYMid meet">
@@ -98,6 +110,27 @@
                   th:text="${t + '%'}">0%</text>
           </th:block>
         </g>
+        <!-- X-axis attempt numbers (1..slots). Slots grow in steps of 5. -->
+        <g>
+          <line class="trend-axis"
+                th:x1="${padL}" th:x2="${chartW - padR}"
+                th:y1="${chartH - padB}" th:y2="${chartH - padB}" />
+          <th:block th:each="xt : ${xTicks}">
+            <line class="trend-axis-faint"
+                  th:x1="${xt[0]}" th:x2="${xt[0]}"
+                  th:y1="${padT}" th:y2="${chartH - padB}" />
+            <text class="trend-tick"
+                  th:x="${xt[0]}"
+                  th:y="${chartH - padB + 14}"
+                  text-anchor="middle"
+                  th:text="${xt[1]}">1</text>
+          </th:block>
+          <text class="trend-tick"
+                th:x="${(padL + chartW - padR) / 2}"
+                th:y="${chartH - 4}"
+                text-anchor="middle"
+                fill="#6b7280">Attempt #</text>
+        </g>
         <!-- Passing-score reference line -->
         <line class="trend-pass-line"
               th:x1="${padL}"
@@ -108,14 +141,16 @@
               th:x="${chartW - padR - 90}"
               th:y="${passY - 6}"
               th:text="${'Pass: ' + passingPct + '%'}">Pass: 65%</text>
-        <!-- The score line -->
+        <!-- The score line — the focus of the chart. -->
         <polyline class="trend-line" th:attr="points=${polyPoints}" />
-        <!-- Per-attempt dots -->
+        <!-- Tiny markers as hover targets so users can still see exact
+             per-attempt scores; pass/fail conveyed by ring color. -->
         <g>
-          <circle th:each="c : ${circles}"
-                  th:cx="${c[0]}" th:cy="${c[1]}" r="5"
-                  th:attr="class=${c[3] == 1 ? 'trend-pt-pass' : 'trend-pt-fail'}">
-            <title th:text="${c[2] + '%'}">0%</title>
+          <circle th:each="m : ${markers}"
+                  th:cx="${m[0]}" th:cy="${m[1]}" r="3.5"
+                  class="trend-mark"
+                  th:classappend="${m[3] == 1} ? 'trend-mark-pass' : 'trend-mark-fail'">
+            <title th:text="|Attempt #${m[4]}: ${m[2]}% — ${m[3] == 1 ? 'PASS' : 'FAIL'}|">0%</title>
           </circle>
         </g>
       </svg>
