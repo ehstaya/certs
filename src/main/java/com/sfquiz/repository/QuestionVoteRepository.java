@@ -17,11 +17,16 @@ public interface QuestionVoteRepository extends JpaRepository<QuestionVote, Long
     long countByQuestionAndVoteValue(Question question, int voteValue);
 
     /** Every vote that has a non-blank reason — for the verifier-feedback
-     *  admin report. Joined back to question + voter so the template can
-     *  show "user X said: <reason>". */
+     *  admin report. JOIN FETCH hydrates question + its exam + voter inside
+     *  the transaction so the controller/template can touch them after the
+     *  session closes (avoids LazyInitializationException on q.getNumber()
+     *  etc.). */
     @Query("SELECT v FROM QuestionVote v " +
+           "JOIN FETCH v.question q " +
+           "JOIN FETCH q.exam " +
+           "JOIN FETCH v.user " +
            "WHERE v.reason IS NOT NULL AND LENGTH(TRIM(v.reason)) > 0 " +
-           "AND (:examSlug IS NULL OR v.question.exam.slug = :examSlug) " +
+           "AND (:examSlug IS NULL OR q.exam.slug = :examSlug) " +
            "ORDER BY v.votedAt DESC")
     List<QuestionVote> findVotesWithReasons(@Param("examSlug") String examSlug);
 
