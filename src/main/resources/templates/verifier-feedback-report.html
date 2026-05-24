@@ -6,6 +6,7 @@
   <title>Reports — Verifier feedback</title>
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="stylesheet" href="/css/reports.css" />
+  <script src="/js/confirm.js" defer></script>
   <style>
     .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
     .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
@@ -113,14 +114,18 @@
               <form method="post" th:action="@{|/admin/questions/${r.questionId}/delete|}" style="display:inline">
                 <input type="hidden" name="returnTo" value="/admin/reports/verifier-feedback" />
                 <button class="btn btn-danger btn-sm" type="submit"
-                        onclick="return confirm('Retire this question?\n\nIt will be hidden from learners but you can restore or permanently delete it later from the Retired queue.')">
+                        data-confirm-title="Retire this question"
+                        data-confirm="Retire this question?&#10;&#10;It will be hidden from learners but you can restore or permanently delete it later from the Retired queue."
+                        data-confirm-ok="Retire">
                   Retire
                 </button>
               </form>
               <form method="post" th:action="@{|/admin/questions/${r.questionId}/send-back|}" style="display:inline">
                 <input type="hidden" name="returnTo" value="/admin/reports/verifier-feedback" />
                 <button class="btn btn-warning btn-sm" type="submit"
-                        onclick="return confirm('Send this question back to the review queue for the domain admin to re-check?')">
+                        data-confirm-title="Send back for re-review"
+                        data-confirm="Send this question back to the review queue for the domain admin to re-check?"
+                        data-confirm-ok="Send back">
                   Send back
                 </button>
               </form>

@@ -388,7 +388,7 @@
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        if (err && err.error) alert(err.error);
+        if (err && err.error) showTransientWarning(err.error);
         return;
       }
       const data = await res.json();

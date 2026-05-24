@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Study Material Uploads — Salesforce Admin Quiz</title>
   <link rel="stylesheet" href="/css/style.css" />
+  <script src="/js/confirm.js" defer></script>
   <style>
     .uploads-hint { color: var(--gray-500, #6b7280); font-size: .9rem; }
     .uploads-hint code { background: var(--gray-100, #f3f4f6); padding: 1px 4px; border-radius: 4px; }
@@ -360,7 +361,9 @@
                   th:if="${u.status.name() == 'SKIPPED' and u.error != null and #strings.contains(u.error, 'dump')}">
               <button class="btn btn-warning btn-sm" type="submit"
                       title="Skip the leaked-content check and force-extract anyway."
-                      onclick="return confirm('Override dump-check?\n\nClaude flagged this file as possibly leaked/paid real-exam content. Overriding will run extraction anyway and add the resulting questions as PENDING for your review.\n\nOnly do this if you are certain the material is legitimately written practice content. You are accountable for what enters the question bank.\n\nProceed?')">
+                      data-confirm-title="Override dump-check"
+                      data-confirm="Claude flagged this file as possibly leaked/paid real-exam content. Overriding will run extraction anyway and add the resulting questions as PENDING for your review.&#10;&#10;Only do this if you are certain the material is legitimately written practice content. You are accountable for what enters the question bank."
+                      data-confirm-ok="Override and extract">
                 Override (allow dump)
               </button>
             </form>
@@ -425,8 +428,10 @@
       }
       if (isAdmin && r.status === "SKIPPED" && r.error && r.error.indexOf("dump") !== -1) {
         html += '<form method="post" action="/uploads/' + r.id + '/override-dump-check" style="display:inline">' +
-                '<button class="btn btn-warning btn-sm" type="submit" ' +
-                'onclick="return confirm(\'Override dump-check?\\n\\nClaude flagged this file as possibly leaked/paid real-exam content. Overriding will run extraction anyway and add the resulting questions as PENDING for your review.\\n\\nOnly do this if you are certain the material is legitimately written practice content. You are accountable for what enters the question bank.\\n\\nProceed?\')">' +
+                '<button class="btn btn-warning btn-sm" type="submit"' +
+                ' data-confirm-title="Override dump-check"' +
+                ' data-confirm="Claude flagged this file as possibly leaked/paid real-exam content. Overriding will run extraction anyway and add the resulting questions as PENDING for your review.&#10;&#10;Only do this if you are certain the material is legitimately written practice content. You are accountable for what enters the question bank."' +
+                ' data-confirm-ok="Override and extract">' +
                 'Override (allow dump)</button></form> ';
       }
       html += '<form method="post" action="/uploads/' + r.id + '/delete" style="display:inline">' +

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>User Administration — Salesforce Admin Quiz</title>
   <link rel="stylesheet" href="/css/style.css" />
+  <script src="/js/confirm.js" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -128,15 +129,18 @@
             <form method="post" th:action="@{|/admin/users/${u.id}/promote|}" style="display:inline" th:if="${u.role.name() != 'ADMIN'}">
               <button class="btn btn-primary btn-sm" type="submit"
                       title="Grant admin access — they'll be able to approve questions and manage users."
-                      onclick="return confirm('Promote this user to admin? They will be able to approve questions and manage users.')">
+                      data-confirm-title="Promote to admin"
+                      data-confirm="Promote this user to admin? They will be able to approve questions and manage users."
+                      data-confirm-ok="Promote">
                 Promote to admin
               </button>
             </form>
             <form method="post" th:action="@{|/admin/users/${u.id}/reset-password|}" style="display:inline">
               <button class="btn btn-sm" type="submit"
                       title="Generate a new temp password. The user will be forced to change it on next sign-in."
-                      onclick="return confirm('Generate a new temporary password for ' + this.form.getAttribute('data-email') + '? Their current password will stop working immediately.')"
-                      th:attr="data-email=${u.email}">
+                      data-confirm-title="Reset password"
+                      th:attr="data-confirm=|Generate a new temporary password for ${u.email}? Their current password will stop working immediately.|"
+                      data-confirm-ok="Reset password">
                 Reset password
               </button>
             </form>
@@ -146,15 +150,22 @@
             <!-- ADMIN role: can demote (server-side guards prevent demoting self or the last admin) -->
             <form method="post" th:action="@{|/admin/users/${u.id}/demote|}" style="display:inline" th:if="${u.role.name() == 'ADMIN'}">
               <button class="btn btn-warning btn-sm" type="submit"
-                      onclick="return confirm('Demote this admin back to a regular user?')">
+                      data-confirm-title="Demote admin"
+                      data-confirm="Demote this admin back to a regular user?"
+                      data-confirm-ok="Demote">
                 Demote
               </button>
             </form>
             <!-- Hard delete — works for any role. Server guards self-delete + last-admin-delete. -->
             <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline">
               <button class="btn btn-danger btn-sm" type="submit"
-                      th:attr="data-email=${u.email},data-role=${u.role}"
-                      onclick="return confirm('Permanently delete ' + this.form.getAttribute('data-email') + ' (' + this.form.getAttribute('data-role') + ')?\n\nThis deletes the account and ALL their data — test attempts, votes, password-reset tokens. Cannot be undone.\n\nIf you just want to revoke access without losing data, click Disable instead.')">
+                      data-confirm-title="Delete user permanently"
+                      th:attr="data-confirm=|Permanently delete ${u.email} (${u.role})?
+
+This deletes the account and ALL their data — test attempts, votes, password-reset tokens. Cannot be undone.
+
+If you just want to revoke access without losing data, click Disable instead.|"
+                      data-confirm-ok="Delete permanently">
                 Delete
               </button>
             </form>
@@ -176,8 +187,9 @@
           <td class="actions-col">
             <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline">
               <button class="btn btn-danger btn-sm" type="submit"
-                      th:attr="data-email=${u.email}"
-                      onclick="return confirm('Permanently delete the rejected registration for ' + this.form.getAttribute('data-email') + '? Cannot be undone.')">
+                      data-confirm-title="Delete rejected registration"
+                      th:attr="data-confirm=|Permanently delete the rejected registration for ${u.email}? Cannot be undone.|"
+                      data-confirm-ok="Delete">
                 Delete
               </button>
             </form>
@@ -202,8 +214,9 @@
             </form>
             <form method="post" th:action="@{|/admin/users/${u.id}/delete|}" style="display:inline">
               <button class="btn btn-danger btn-sm" type="submit"
-                      th:attr="data-email=${u.email}"
-                      onclick="return confirm('Permanently delete the disabled account for ' + this.form.getAttribute('data-email') + ' and all their data (attempts, votes)? Cannot be undone.')">
+                      data-confirm-title="Delete disabled account"
+                      th:attr="data-confirm=|Permanently delete the disabled account for ${u.email} and all their data (attempts, votes)? Cannot be undone.|"
+                      data-confirm-ok="Delete">
                 Delete
               </button>
             </form>

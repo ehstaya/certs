@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Question maintenance — Salesforce Admin Quiz</title>
   <link rel="stylesheet" href="/css/style.css" />
+  <script src="/js/confirm.js" defer></script>
   <style>
     .maint-form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .maint-back-bar { margin-bottom: 12px; }
@@ -59,7 +60,9 @@
       <form method="post" action="/admin/questions/classify-topics" style="display:inline">
         <input type="hidden" name="examSlug" value="salesforce-admin" />
         <button class="btn btn-primary btn-sm" type="submit"
-                onclick="return confirm('Classify every untagged Salesforce-Admin question via Claude Haiku? Bounded by the daily Anthropic budget.')">
+                data-confirm-title="Classify Salesforce-Admin topics"
+                data-confirm="Classify every untagged Salesforce-Admin question via Claude Haiku? Bounded by the daily Anthropic budget."
+                data-confirm-ok="Classify">
           Classify Salesforce-Admin topics
         </button>
       </form>
@@ -85,14 +88,18 @@
       <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
         <input type="hidden" name="examSlug" value="salesforce-admin" />
         <button class="btn btn-primary btn-sm" type="submit"
-                onclick="return confirm('Enrich missing Salesforce-Admin explanations from help.salesforce.com / Trailhead? Bounded by the daily Anthropic budget.')">
+                data-confirm-title="Enrich Salesforce-Admin"
+                data-confirm="Enrich missing Salesforce-Admin explanations from help.salesforce.com / Trailhead? Bounded by the daily Anthropic budget."
+                data-confirm-ok="Enrich">
           Enrich Salesforce-Admin
         </button>
       </form>
       <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
         <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
         <button class="btn btn-sm" type="submit"
-                onclick="return confirm('Enrich MCPA explanations from docs.mulesoft.com? Bounded by the daily Anthropic budget.')">
+                data-confirm-title="Enrich MCPA"
+                data-confirm="Enrich MCPA explanations from docs.mulesoft.com? Bounded by the daily Anthropic budget."
+                data-confirm-ok="Enrich">
           Enrich MCPA
         </button>
       </form>

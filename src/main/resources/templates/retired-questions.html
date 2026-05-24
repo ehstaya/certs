@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Retired Questions — Salesforce Admin Quiz</title>
   <link rel="stylesheet" href="/css/style.css" />
+  <script src="/js/confirm.js" defer></script>
   <style>
     .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
     .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
@@ -107,8 +108,13 @@
             <a class="btn btn-sm" th:href="@{|/admin/questions/${q.id}/edit|}">Edit</a>
             <form method="post" th:action="@{|/admin/questions/${q.id}/permanently-delete|}" style="display:inline">
               <button class="btn btn-danger btn-sm" type="submit"
-                      th:attr="data-text=${#strings.abbreviate(q.text, 80)}"
-                      onclick="return confirm('Permanently delete this question?\n\n' + this.getAttribute('data-text') + '\n\nThis removes the row from the database. Cannot be undone.')">
+                      data-confirm-title="Permanently delete"
+                      th:attr="data-confirm=|Permanently delete this question?
+
+${#strings.abbreviate(q.text, 80)}
+
+This removes the row from the database. Cannot be undone.|"
+                      data-confirm-ok="Delete permanently">
                 Permanently delete
               </button>
             </form>
