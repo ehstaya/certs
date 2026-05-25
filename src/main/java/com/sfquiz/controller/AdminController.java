@@ -65,8 +65,12 @@ public class AdminController {
 
         // Slack integration status — drives the small "Slack" card on /admin
         // so the super admin can see at a glance whether the webhook is set,
-        // when the last digest was posted, and trigger a manual test.
+        // when the last digest was posted, and trigger a manual test. Also
+        // surfaces whether the optional bot-token is configured (which
+        // upgrades plain-text "@Name" pings into real <@U...> mentions that
+        // actually notify the recipient).
         model.addAttribute("slackConfigured", slack.isConfigured());
+        model.addAttribute("slackMentionsLive", slack.mentionsAreLive());
         model.addAttribute("slackLastPostedAt", slack.lastPostedAt());
         return "admin";
     }

@@ -28,6 +28,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /** Posts a digest message to a single Slack incoming webhook whenever there
  *  are pending questions awaiting domain-admin review. The 24-hour cadence
@@ -52,6 +53,7 @@ public class SlackNotifier {
     private final DomainAdminAssignmentRepository assignments;
     private final UserRepository users;
     private final ObjectMapper json;
+    private final SlackUserResolver resolver;
 
     /** First try the Spring property {@code app.slack.webhook-url} (also
      *  satisfied by env var {@code APP_SLACK_WEBHOOK_URL} via relaxed
@@ -71,12 +73,21 @@ public class SlackNotifier {
                          AppSettingRepository settings,
                          DomainAdminAssignmentRepository assignments,
                          UserRepository users,
-                         ObjectMapper json) {
+                         ObjectMapper json,
+                         SlackUserResolver resolver) {
         this.questions = questions;
         this.settings = settings;
         this.assignments = assignments;
         this.users = users;
         this.json = json;
+        this.resolver = resolver;
+    }
+
+    /** True when the optional Slack bot token is configured — real
+     *  {@code <@U...>} mentions are produced; false means plain-text
+     *  fallback (display name only, no notification). */
+    public boolean mentionsAreLive() {
+        return resolver.isConfigured();
     }
 
     public boolean isConfigured() {
@@ -197,7 +208,7 @@ public class SlackNotifier {
                 if (domainAdmins.size() > 1) sb.append("s");
                 sb.append(":");
                 for (User u : domainAdmins) {
-                    sb.append("\n@").append(mentionFor(u));
+                    sb.append("\n").append(mentionFor(u));
                 }
                 sb.append("\n");
             } else if (!superAdmins.isEmpty()) {
@@ -205,7 +216,7 @@ public class SlackNotifier {
                 if (superAdmins.size() > 1) sb.append("s");
                 sb.append(" as fallback:_");
                 for (User u : superAdmins) {
-                    sb.append("\n@").append(mentionFor(u));
+                    sb.append("\n").append(mentionFor(u));
                 }
                 sb.append("\n");
             } else {
@@ -247,16 +258,22 @@ public class SlackNotifier {
         return out;
     }
 
-    /** Builds the @-mention string for a user. We prefer the full name when
-     *  set so the message reads naturally; otherwise fall back to email.
-     *  Slack soft-links these for users whose Slack display name or email
-     *  matches; either way the domain admin is clearly named in the digest. */
+    /** Builds the @-mention string for a user. When the optional bot token is
+     *  configured we resolve the user's Slack ID via {@code users.lookupByEmail}
+     *  and emit a real {@code <@U...>} mention that triggers a notification;
+     *  the display name is appended for human readability. Without the token
+     *  we fall back to plain-text {@code @Full Name} which is just text — no
+     *  ping but the admin is at least clearly named. */
     private String mentionFor(User u) {
         if (u == null) return "(unknown)";
-        if (u.getFullName() != null && !u.getFullName().isBlank()) {
-            return u.getFullName().trim();
+        String display = (u.getFullName() != null && !u.getFullName().isBlank())
+                ? u.getFullName().trim()
+                : u.getEmail();
+        Optional<String> slackId = resolver.lookup(u.getEmail());
+        if (slackId.isPresent()) {
+            return "<@" + slackId.get() + "> (" + display + ")";
         }
-        return u.getEmail();
+        return "@" + display;
     }
 
     private String reviewQueueUrl() {

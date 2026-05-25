@@ -78,6 +78,8 @@
     <h2>Slack integration</h2>
     <div th:if="${slackConfigured}" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">
       <span class="pct-pill good" style="font-weight:600;">✓ Webhook configured</span>
+      <span class="pct-pill good" th:if="${slackMentionsLive}" style="font-weight:600;">✓ Real @-mentions enabled</span>
+      <span class="pct-pill mid" th:unless="${slackMentionsLive}" style="font-weight:600;background:#fef3c7;color:#92400e;">@-mentions: plain text only</span>
       <span class="muted" th:if="${slackLastPostedAt != null}">
         Last digest posted: <strong th:text="${#temporals.format(slackLastPostedAt, 'yyyy-MM-dd HH:mm z')}">—</strong>
         (next reminder ~24h after that).
@@ -97,6 +99,20 @@
       <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener">incoming-webhook URL</a>
       for the channel that should receive review reminders, then restart the app.
       Once configured, a scheduled job posts a digest of pending questions once every 24 hours until the queue is cleared.
+    </div>
+    <div th:if="${slackConfigured and !slackMentionsLive}"
+         style="background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:4px;margin-top:8px;">
+      <strong>Optional — turn @-mentions into real Slack pings:</strong>
+      The digest currently lists domain admins as plain text (no notification). To upgrade to real
+      <code>@Amit Revankar</code>-style pings that ring the recipient's Slack:
+      <ol style="margin:8px 0 0 18px;padding:0;">
+        <li>In your Slack app → <strong>OAuth &amp; Permissions</strong>, add the bot-token scope
+            <code>users:read.email</code> (and <code>users:read</code> if missing), then reinstall the app.</li>
+        <li>Copy the <strong>Bot User OAuth Token</strong> (starts with <code>xoxb-</code>).</li>
+        <li>Set <code>SLACK_BOT_TOKEN</code> on the platform and redeploy.</li>
+      </ol>
+      Without the token, names still appear in the digest — they just don't trigger a notification.
+      The recipient's Slack account email must match their app account email for the lookup to succeed.
     </div>
   </section>
 
