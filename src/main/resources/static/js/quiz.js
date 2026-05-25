@@ -91,6 +91,11 @@
     document.title = name + " — Practice";
     const progress = $("#progressText");
     if (progress) progress.textContent = "0/" + practiceCount;
+    // The reset-timer tooltip is hardcoded "Reset timer to 90:00" in
+    // index.html — overwrite it with the exam's actual duration so the
+    // hover text is accurate per-cert.
+    const resetBtn = document.getElementById("timerReset");
+    if (resetBtn) resetBtn.setAttribute("title", "Reset timer to " + formatMs(TOTAL_MS));
   }
 
   async function loadCurrentUser() {
@@ -983,7 +988,8 @@
   function onResetTest() {
     showConfirmPanel({
       title: "Reset and reshuffle the test?",
-      body: "This will reshuffle all questions, clear your answers, and reset the timer to 90:00.",
+      body: "This will reshuffle all questions, clear your answers, and reset the timer to "
+            + formatMs(TOTAL_MS) + ".",
       confirmLabel: "Reset test",
       onConfirm: doResetTest,
     });
@@ -1016,9 +1022,11 @@
   }
 
   function onResetTimer() {
+    const dur = formatMs(TOTAL_MS);
     showConfirmPanel({
-      title: "Reset the timer to 90:00?",
-      body: "Choose 'Reset timer' to keep your progress and restart the clock, or 'Restart entire test' to reshuffle 60 fresh questions and start over.",
+      title: "Reset the timer to " + dur + "?",
+      body: "Choose 'Reset timer' to keep your progress and restart the clock, or 'Restart entire test' to reshuffle "
+            + practiceCount + " fresh questions and start over.",
       confirmLabel: "Reset timer",
       onConfirm: () => {
         resetTimerInternal();
