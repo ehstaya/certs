@@ -657,6 +657,21 @@
     if (state.lastRecordedFinishAt && (finishedAt - state.lastRecordedFinishAt) < 1000) return;
     state.lastRecordedFinishAt = finishedAt;
     const started = state.startedAt || finishedAt;
+
+    // Snapshot per-question detail so the user's My Reports drill-down can
+    // show them which questions they got right/wrong + the explanations.
+    // Only submitted questions are included; unanswered ones get no row.
+    const answers = [];
+    state.questions.forEach((q) => {
+      const a = state.answers.get(q.id);
+      if (!a || !a.submitted) return;
+      answers.push({
+        questionId: q.id,
+        selectedChoiceIds: Array.from(a.selected),
+        correct: !!a.correct,
+      });
+    });
+
     fetch("/api/test-attempts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -669,6 +684,7 @@
         correctCount: correctCount,
         incorrectCount: incorrect,
         unansweredCount: unanswered,
+        answers: answers,
       }),
     }).catch(function () { /* don't block UX on a recording failure */ });
   }

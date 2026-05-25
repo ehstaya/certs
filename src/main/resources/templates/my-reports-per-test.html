@@ -97,6 +97,10 @@
     </section>
 
     <h2>Attempt history</h2>
+    <p class="muted" style="font-size:13px;">
+      Click a <strong>Correct</strong> or <strong>Incorrect</strong> count to review the questions
+      with explanations — useful for learning from what you got right and where you went wrong.
+    </p>
     <div class="empty" th:if="${#lists.isEmpty(rows)}">No attempts on this test yet.</div>
     <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
       <thead><tr><th>Finished</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th></tr></thead>
@@ -104,8 +108,22 @@
         <tr th:each="a : ${rows}">
           <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
           <td th:text="${a.scorePercent + '%'}">0%</td>
-          <td th:text="${a.correctCount}">0</td>
-          <td th:text="${a.incorrectCount}">0</td>
+          <td>
+            <a th:if="${a.correctCount > 0}"
+               th:href="@{|/my/reports/attempts/${a.id}|(filter='correct')}"
+               class="pct-pill good"
+               style="text-decoration:none;cursor:pointer;"
+               th:text="${a.correctCount}">0</a>
+            <span th:unless="${a.correctCount > 0}" class="muted" th:text="${a.correctCount}">0</span>
+          </td>
+          <td>
+            <a th:if="${a.incorrectCount > 0}"
+               th:href="@{|/my/reports/attempts/${a.id}|(filter='incorrect')}"
+               class="pct-pill bad"
+               style="text-decoration:none;cursor:pointer;"
+               th:text="${a.incorrectCount}">0</a>
+            <span th:unless="${a.incorrectCount > 0}" class="muted" th:text="${a.incorrectCount}">0</span>
+          </td>
           <td th:text="${a.unansweredCount}">0</td>
           <td th:text="${(a.durationSeconds / 60) + 'm ' + (a.durationSeconds % 60) + 's'}">—</td>
           <td>

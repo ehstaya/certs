@@ -9,6 +9,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -167,6 +168,31 @@ public class UserReportsController {
         model.addAttribute("passY", passY);
         model.addAttribute("section", "trend");
         return "my-reports-trend";
+    }
+
+    /** Drill-down into a single attempt: shows every question the user
+     *  answered, the choices they picked, the correct choices, and the
+     *  explanation. {@code filter=correct|incorrect|all} controls which
+     *  questions are listed; the per-test report links to this with the
+     *  filter pre-applied. Ownership is enforced server-side by the
+     *  service (AccessDeniedException if the attempt belongs to someone
+     *  else). */
+    @GetMapping("/attempts/{id}")
+    public String attemptDetail(Authentication auth,
+                                @PathVariable Long id,
+                                @RequestParam(name = "filter", defaultValue = "all") String filter,
+                                Model model) {
+        String email = currentEmail(auth);
+        TestAttemptService.AttemptDetailView detail = attempts.attemptDetail(email, id, filter);
+        model.addAttribute("detail", detail);
+        // Normalize the filter for the template — only correct/incorrect get
+        // a focused title; anything else falls back to "all".
+        String norm = "all";
+        if ("correct".equalsIgnoreCase(filter)) norm = "correct";
+        else if ("incorrect".equalsIgnoreCase(filter)) norm = "incorrect";
+        model.addAttribute("filter", norm);
+        model.addAttribute("section", "per-test");
+        return "my-reports-attempt-detail";
     }
 
 }

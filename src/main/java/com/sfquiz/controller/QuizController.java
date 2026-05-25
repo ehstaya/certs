@@ -66,10 +66,21 @@ public class QuizController {
         }
         Instant started  = Instant.parse(req.startedAt());
         Instant finished = Instant.parse(req.finishedAt());
+        java.util.List<TestAttemptService.AnswerDetail> answers = new java.util.ArrayList<>();
+        if (req.answers() != null) {
+            for (AttemptAnswerRequest a : req.answers()) {
+                if (a == null || a.questionId() == null) continue;
+                answers.add(new TestAttemptService.AnswerDetail(
+                        a.questionId(),
+                        a.selectedChoiceIds() == null ? java.util.List.of() : a.selectedChoiceIds(),
+                        a.correct()));
+            }
+        }
         attempts.record(auth.getName(), new TestAttemptService.RecordRequest(
                 req.examSlug(), started, finished,
                 req.totalQuestions(), req.correctCount(),
-                req.incorrectCount(), req.unansweredCount()));
+                req.incorrectCount(), req.unansweredCount(),
+                answers));
         return ResponseEntity.noContent().build();
     }
 
@@ -80,6 +91,15 @@ public class QuizController {
             int totalQuestions,
             int correctCount,
             int incorrectCount,
-            int unansweredCount
+            int unansweredCount,
+            java.util.List<AttemptAnswerRequest> answers
+    ) {}
+
+    /** Per-question answer snapshot from the client. {@code correct} is
+     *  re-validated server-side in TestAttemptService.record(). */
+    public record AttemptAnswerRequest(
+            Long questionId,
+            java.util.List<Long> selectedChoiceIds,
+            boolean correct
     ) {}
 }

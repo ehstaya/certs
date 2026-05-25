@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My reports — Attempt detail</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+  <style>
+    .detail-back { margin-bottom: 14px; display: inline-block; }
+    .filter-tabs { display: flex; gap: 6px; margin: 14px 0 18px 0; flex-wrap: wrap; }
+    .filter-tab {
+      padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+      text-decoration: none; border: 1px solid var(--gray-300, #d1d5db);
+      background: #fff; color: var(--gray-700, #374151);
+    }
+    .filter-tab:hover { background: var(--gray-50, #f9fafb); }
+    .filter-tab.active.all       { background: #e0f2fe; color: #075985; border-color: #7dd3fc; }
+    .filter-tab.active.correct   { background: #d1fae5; color: #065f46; border-color: #34d399; }
+    .filter-tab.active.incorrect { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+
+    .attempt-summary {
+      background: #f9fafb; border: 1px solid var(--gray-200, #e5e7eb);
+      border-radius: 10px; padding: 14px 18px; margin-bottom: 18px;
+      display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
+    }
+    .attempt-summary .meta-label { font-size: 11px; color: var(--gray-500, #6b7280); text-transform: uppercase; letter-spacing: 0.4px; }
+    .attempt-summary .meta-value { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .qa-card {
+      border: 1px solid var(--gray-200, #e5e7eb);
+      border-left: 4px solid var(--gray-300, #d1d5db);
+      border-radius: 8px; background: #fff;
+      padding: 16px 18px; margin-bottom: 14px;
+    }
+    .qa-card.correct   { border-left-color: #047857; background: #f0fdf4; }
+    .qa-card.incorrect { border-left-color: #b91c1c; background: #fef2f2; }
+    .qa-head {
+      display: flex; gap: 12px; align-items: center; margin-bottom: 8px;
+      font-size: 13px; color: var(--gray-700, #374151);
+    }
+    .qa-head .pill {
+      display: inline-block; padding: 2px 10px; border-radius: 999px;
+      font-weight: 700; font-size: 11px; letter-spacing: 0.3px;
+    }
+    .qa-head .pill.correct   { background: #d1fae5; color: #065f46; }
+    .qa-head .pill.incorrect { background: #fee2e2; color: #991b1b; }
+    .qa-question { font-size: 15px; font-weight: 600; color: var(--gray-900, #111827); margin: 4px 0 10px 0; white-space: pre-wrap; }
+    .qa-row { margin: 6px 0; font-size: 14px; }
+    .qa-row .label { font-weight: 600; color: var(--gray-700, #374151); margin-right: 6px; }
+    .qa-row.correct-row   .label { color: #047857; }
+    .qa-row.your-row.bad  .label { color: #b91c1c; }
+    .qa-choice { padding: 2px 0; }
+    .qa-choice .clabel { font-weight: 700; margin-right: 6px; }
+    .qa-explanation {
+      margin-top: 12px; padding: 10px 14px;
+      background: #f3f4f6; border-radius: 6px;
+      font-size: 13px; color: var(--gray-700, #374151);
+      white-space: pre-wrap;
+    }
+    .qa-explanation .label { font-weight: 700; color: var(--gray-900, #111827); display: block; margin-bottom: 4px; }
+    .qa-help-link { display: inline-block; margin-top: 8px; font-size: 12px; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin" style="display:none">Users</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions for Review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"||d.role==="SUPERADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree">
+    <div class="reports-tree-section">My reports</div>
+    <a href="/my/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''"><span>📊</span> Dashboard</a>
+    <div class="reports-tree-section">Per test</div>
+    <a href="/my/reports/per-test" th:classappend="${section == 'per-test'} ? 'active' : ''"><span>📋</span> Per-test stats</a>
+    <a href="/my/reports/trend" th:classappend="${section == 'trend'} ? 'active' : ''"><span>📈</span> Score trend</a>
+  </aside>
+
+  <main class="reports-content">
+    <a class="btn btn-sm detail-back" th:href="@{|/my/reports/per-test|(exam=${detail.examSlug})}">‹ Back to attempts</a>
+
+    <h1>
+      <span th:if="${filter == 'correct'}">Your correct answers</span>
+      <span th:if="${filter == 'incorrect'}">Your incorrect answers</span>
+      <span th:if="${filter == 'all'}">All your answers</span>
+    </h1>
+    <p class="muted">
+      Attempt on <strong th:text="${detail.examName}">Exam</strong> finished
+      <strong th:text="${#temporals.format(detail.finishedAt, 'yyyy-MM-dd HH:mm')}">—</strong>.
+      Review the explanations to lock in what you got right and learn from what you missed.
+    </p>
+
+    <section class="attempt-summary">
+      <div>
+        <div class="meta-label">Score</div>
+        <div class="meta-value" th:text="${detail.scorePercent + '%'}">0%</div>
+      </div>
+      <div>
+        <div class="meta-label">Result</div>
+        <div class="meta-value">
+          <span th:classappend="${detail.passed} ? 'pct-pill good' : 'pct-pill bad'"
+                th:text="${detail.passed} ? 'PASS' : 'FAIL'">FAIL</span>
+        </div>
+      </div>
+      <div>
+        <div class="meta-label">Correct</div>
+        <div class="meta-value" style="color:#047857;" th:text="${detail.correctCount}">0</div>
+      </div>
+      <div>
+        <div class="meta-label">Incorrect</div>
+        <div class="meta-value" style="color:#b91c1c;" th:text="${detail.incorrectCount}">0</div>
+      </div>
+      <div>
+        <div class="meta-label">Unanswered</div>
+        <div class="meta-value" th:text="${detail.unansweredCount}">0</div>
+      </div>
+      <div>
+        <div class="meta-label">Total questions</div>
+        <div class="meta-value" th:text="${detail.totalQuestions}">0</div>
+      </div>
+    </section>
+
+    <div class="filter-tabs">
+      <a th:href="@{|/my/reports/attempts/${detail.attemptId}|(filter='all')}"
+         class="filter-tab all"
+         th:classappend="${filter == 'all'} ? 'active' : ''">All</a>
+      <a th:href="@{|/my/reports/attempts/${detail.attemptId}|(filter='correct')}"
+         class="filter-tab correct"
+         th:classappend="${filter == 'correct'} ? 'active' : ''">Correct only</a>
+      <a th:href="@{|/my/reports/attempts/${detail.attemptId}|(filter='incorrect')}"
+         class="filter-tab incorrect"
+         th:classappend="${filter == 'incorrect'} ? 'active' : ''">Incorrect only</a>
+    </div>
+
+    <div class="empty" th:if="${#lists.isEmpty(detail.items)}">
+      <span th:if="${filter == 'correct'}">No correct answers in this attempt — keep practicing!</span>
+      <span th:if="${filter == 'incorrect'}">Nice — no incorrect answers in this attempt. 🎉</span>
+      <span th:if="${filter == 'all'}">No answered questions on this attempt.</span>
+    </div>
+
+    <article th:each="item, it : ${detail.items}"
+             class="qa-card"
+             th:classappend="${item.correct} ? 'correct' : 'incorrect'">
+      <header class="qa-head">
+        <span class="muted">Question <span th:text="${it.index + 1}">1</span></span>
+        <span class="pill"
+              th:classappend="${item.correct} ? 'correct' : 'incorrect'"
+              th:text="${item.correct} ? 'Correct' : 'Incorrect'">—</span>
+        <span class="muted" style="margin-left:auto;" th:if="${item.questionType == 'MULTI'}">Multi-select</span>
+      </header>
+
+      <div class="qa-question" th:text="${item.questionText}">Question text</div>
+
+      <div class="qa-row your-row" th:classappend="${item.correct} ? '' : 'bad'">
+        <span class="label">Your answer:</span>
+        <span th:if="${#lists.isEmpty(item.userPicks)}" class="muted">— (no choice picked)</span>
+        <span th:unless="${#lists.isEmpty(item.userPicks)}">
+          <span th:each="c, ci : ${item.userPicks}">
+            <span class="qa-choice"><span class="clabel" th:text="${c.label}">A</span>. <span th:text="${c.text}">choice</span></span>
+            <span th:if="${!ci.last}">; </span>
+          </span>
+        </span>
+      </div>
+
+      <div class="qa-row correct-row" th:unless="${item.correct}">
+        <span class="label">Correct answer:</span>
+        <span th:each="c, ci : ${item.correctPicks}">
+          <span class="qa-choice"><span class="clabel" th:text="${c.label}">A</span>. <span th:text="${c.text}">choice</span></span>
+          <span th:if="${!ci.last}">; </span>
+        </span>
+      </div>
+
+      <div class="qa-explanation"
+           th:if="${item.explanation != null and !#strings.isEmpty(item.explanation)}">
+        <span class="label">Explanation</span>
+        <span th:text="${item.explanation}">explanation</span>
+        <a th:if="${item.helpUrl != null and !#strings.isEmpty(item.helpUrl)}"
+           th:href="${item.helpUrl}" target="_blank" rel="noopener"
+           class="qa-help-link">Reference →</a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

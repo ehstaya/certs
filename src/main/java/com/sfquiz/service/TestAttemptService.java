@@ -1,9 +1,13 @@
 package com.sfquiz.service;
 
 import com.sfquiz.entity.Exam;
+import com.sfquiz.entity.Question;
 import com.sfquiz.entity.TestAttempt;
+import com.sfquiz.entity.TestAttemptAnswer;
 import com.sfquiz.entity.User;
 import com.sfquiz.repository.ExamRepository;
+import com.sfquiz.repository.QuestionRepository;
+import com.sfquiz.repository.TestAttemptAnswerRepository;
 import com.sfquiz.repository.TestAttemptRepository;
 import com.sfquiz.repository.UserRepository;
 import org.slf4j.Logger;
@@ -21,14 +25,32 @@ public class TestAttemptService {
     private static final Logger log = LoggerFactory.getLogger(TestAttemptService.class);
 
     private final TestAttemptRepository attempts;
+    private final TestAttemptAnswerRepository answerRepo;
     private final ExamRepository exams;
     private final UserRepository users;
+    private final QuestionRepository questions;
 
-    public TestAttemptService(TestAttemptRepository attempts, ExamRepository exams, UserRepository users) {
+    public TestAttemptService(TestAttemptRepository attempts,
+                              TestAttemptAnswerRepository answerRepo,
+                              ExamRepository exams,
+                              UserRepository users,
+                              QuestionRepository questions) {
         this.attempts = attempts;
+        this.answerRepo = answerRepo;
         this.exams = exams;
         this.users = users;
+        this.questions = questions;
     }
+
+    /** Per-question detail submitted alongside the summary on finalize.
+     *  {@code selectedChoiceIds} is the list the user picked at submit time;
+     *  {@code correct} is the client-computed score (re-validated server-side
+     *  before persisting). */
+    public record AnswerDetail(
+            Long questionId,
+            List<Long> selectedChoiceIds,
+            boolean correct
+    ) {}
 
     /** Server-validated input shape from the quiz UI's finalize-test POST. */
     public record RecordRequest(
@@ -38,7 +60,8 @@ public class TestAttemptService {
             int totalQuestions,
             int correctCount,
             int incorrectCount,
-            int unansweredCount
+            int unansweredCount,
+            List<AnswerDetail> answers
     ) {}
 
     @Transactional
@@ -69,9 +92,49 @@ public class TestAttemptService {
         a.setPassed(score >= e.getPassingScorePercent());
 
         attempts.save(a);
-        log.info("Recorded attempt user={} exam={} score={}% passed={} duration={}s",
-                userEmail, e.getSlug(), score, a.isPassed(), duration);
+
+        // Persist per-question detail so the My Reports drill-down can show
+        // the user what they got right/wrong + the explanation. Re-validates
+        // each answer against the current correct-choice set so a malicious
+        // client can't flip an incorrect to correct just by sending
+        // {correct:true}. Unknown question ids are skipped silently.
+        int saved = 0;
+        if (req.answers() != null) {
+            for (AnswerDetail d : req.answers()) {
+                if (d == null || d.questionId() == null) continue;
+                Question q = questions.findById(d.questionId()).orElse(null);
+                if (q == null) continue;
+                List<Long> picked = d.selectedChoiceIds() == null ? List.of() : d.selectedChoiceIds();
+                boolean serverCorrect = scoreAnswer(q, picked);
+
+                TestAttemptAnswer ans = new TestAttemptAnswer();
+                ans.setAttempt(a);
+                ans.setQuestion(q);
+                ans.setSelectedChoiceIds(picked.isEmpty()
+                        ? ""
+                        : picked.stream().map(String::valueOf).reduce((x, y) -> x + "," + y).orElse(""));
+                ans.setCorrect(serverCorrect);
+                answerRepo.save(ans);
+                saved++;
+            }
+        }
+
+        log.info("Recorded attempt user={} exam={} score={}% passed={} duration={}s answers={}",
+                userEmail, e.getSlug(), score, a.isPassed(), duration, saved);
         return a;
+    }
+
+    /** Server-side scoring — true iff the user picked exactly the set of
+     *  choices marked correct on the question. Matches the per-submit
+     *  scoring done in QuizService so the drill-down agrees with the live
+     *  feedback the user saw mid-test. */
+    private boolean scoreAnswer(Question q, List<Long> pickedIds) {
+        java.util.Set<Long> correct = new java.util.HashSet<>();
+        for (com.sfquiz.entity.Choice c : q.getChoices()) {
+            if (c.isCorrect()) correct.add(c.getId());
+        }
+        java.util.Set<Long> picked = new java.util.HashSet<>(pickedIds == null ? List.of() : pickedIds);
+        return correct.equals(picked);
     }
 
     public List<TestAttempt> listForUser(String userEmail) {
@@ -92,6 +155,99 @@ public class TestAttemptService {
             long attempts, int averageScore, int bestScore,
             long passed, long avgDurationSeconds
     ) {}
+
+    /** One row for the My Reports drill-down. {@code userPicks} is the
+     *  list of choices the user picked, in label order; {@code correctPicks}
+     *  is the set of choices the question marks correct. */
+    public record AttemptAnswerDetail(
+            Long questionId,
+            int questionNumber,
+            String questionText,
+            String questionType,
+            String explanation,
+            String helpUrl,
+            List<ChoiceView> userPicks,
+            List<ChoiceView> correctPicks,
+            boolean correct
+    ) {}
+
+    public record ChoiceView(String label, String text) {}
+
+    public record AttemptDetailView(
+            Long attemptId,
+            String examSlug,
+            String examName,
+            int totalQuestions,
+            int correctCount,
+            int incorrectCount,
+            int unansweredCount,
+            int scorePercent,
+            boolean passed,
+            java.time.Instant finishedAt,
+            List<AttemptAnswerDetail> items
+    ) {}
+
+    /** Fetch the per-question detail for an attempt owned by {@code userEmail}.
+     *  {@code filter} selects "correct", "incorrect", or "all". Throws if the
+     *  attempt doesn't belong to the caller — keeps users from peeking at
+     *  each other's results by guessing ids. */
+    public AttemptDetailView attemptDetail(String userEmail, Long attemptId, String filter) {
+        TestAttempt a = attempts.findById(attemptId)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown attempt id"));
+        if (a.getUser() == null || !a.getUser().getEmail().equalsIgnoreCase(userEmail)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "This attempt belongs to another user.");
+        }
+        boolean wantCorrect   = filter == null || filter.isBlank() || "correct".equalsIgnoreCase(filter) || "all".equalsIgnoreCase(filter);
+        boolean wantIncorrect = filter == null || filter.isBlank() || "incorrect".equalsIgnoreCase(filter) || "all".equalsIgnoreCase(filter);
+        // Strict mode: a non-empty filter only includes the matching side.
+        if ("correct".equalsIgnoreCase(filter))   { wantCorrect = true;  wantIncorrect = false; }
+        if ("incorrect".equalsIgnoreCase(filter)) { wantCorrect = false; wantIncorrect = true;  }
+
+        List<TestAttemptAnswer> rows = answerRepo.findByAttemptOrderByIdAsc(a);
+        List<AttemptAnswerDetail> items = new ArrayList<>();
+        int n = 0;
+        for (TestAttemptAnswer r : rows) {
+            if (r.isCorrect() && !wantCorrect) continue;
+            if (!r.isCorrect() && !wantIncorrect) continue;
+
+            Question q = r.getQuestion();
+            java.util.Set<Long> pickedIds = parseIds(r.getSelectedChoiceIds());
+            List<ChoiceView> userPicks = new ArrayList<>();
+            List<ChoiceView> correctPicks = new ArrayList<>();
+            for (com.sfquiz.entity.Choice c : q.getChoices()) {
+                if (pickedIds.contains(c.getId())) userPicks.add(new ChoiceView(c.getLabel(), c.getText()));
+                if (c.isCorrect()) correctPicks.add(new ChoiceView(c.getLabel(), c.getText()));
+            }
+            items.add(new AttemptAnswerDetail(
+                    q.getId(),
+                    ++n,
+                    q.getText(),
+                    q.getType() == null ? "SINGLE" : q.getType().name(),
+                    q.getExplanation(),
+                    q.getHelpUrl(),
+                    userPicks,
+                    correctPicks,
+                    r.isCorrect()));
+        }
+        return new AttemptDetailView(
+                a.getId(),
+                a.getExam() == null ? "" : a.getExam().getSlug(),
+                a.getExam() == null ? "" : a.getExam().getName(),
+                a.getTotalQuestions(), a.getCorrectCount(),
+                a.getIncorrectCount(), a.getUnansweredCount(),
+                a.getScorePercent(), a.isPassed(),
+                a.getFinishedAt(), items);
+    }
+
+    private static java.util.Set<Long> parseIds(String csv) {
+        java.util.Set<Long> out = new java.util.HashSet<>();
+        if (csv == null || csv.isBlank()) return out;
+        for (String part : csv.split(",")) {
+            try { out.add(Long.parseLong(part.trim())); } catch (NumberFormatException ignored) {}
+        }
+        return out;
+    }
 
     public List<ExamSummary> summaryByExamForUser(String userEmail) {
         User u = users.findByEmailIgnoreCase(userEmail).orElse(null);
