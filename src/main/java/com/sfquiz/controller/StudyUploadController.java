@@ -304,25 +304,35 @@ public class StudyUploadController {
         return "redirect:/uploads";
     }
 
-    /** Admin-only: set the dump-check-override flag and re-queue the upload.
-     *  The extractor will skip the Claude leaked-content check and process the
-     *  file anyway. Use sparingly — the dump-check is there to keep paid /
-     *  leaked real-exam material out of the bank. */
+    /** Domain-admin-only: set the dump-check-override flag and re-queue the
+     *  upload. The extractor will skip the Claude leaked-content check and
+     *  process the file anyway. Use sparingly — the dump-check is there to
+     *  keep paid / leaked real-exam material out of the bank.
+     *
+     *  Scoped to the caller's managed certs: a domain admin can only
+     *  override uploads targeted at certifications they govern. Super
+     *  admins don't touch questions per the role model, so they don't
+     *  reach this endpoint via the UI; if they POST it directly the
+     *  managed-exam check still applies (they implicitly govern all certs). */
     @PostMapping("/{id}/override-dump-check")
     public String overrideDumpCheck(@PathVariable Long id, Authentication auth, RedirectAttributes flash) {
-        if (!isAdmin(auth)) {
-            throw new AccessDeniedException("Only admins can override the dump-check.");
+        StudyUpload u = uploads.findById(id).orElse(null);
+        if (u == null) {
+            return "redirect:/uploads";
         }
-        uploads.findById(id).ifPresent(u -> {
-            processor.setDumpCheckOverride(u.getId(), true);
-            processor.markPending(u.getId());
-            processor.processAsync(u.getId());
-            log.warn("upload id={} dump-check OVERRIDDEN by admin {} — re-processing",
-                    u.getId(), currentEmail(auth));
-            flash.addFlashAttribute("overrideMessage",
-                    "Dump-check override applied to '" + u.getOriginalName() +
-                    "'. Re-extracting now — review the resulting questions carefully at /admin/questions before approving.");
-        });
+        User caller = authz.currentUser(auth).orElse(null);
+        if (caller == null || !authz.canManageExam(caller, u.getExamSlug())) {
+            throw new AccessDeniedException(
+                    "You can only override the dump-check on a certification you govern as domain admin.");
+        }
+        processor.setDumpCheckOverride(u.getId(), true);
+        processor.markPending(u.getId());
+        processor.processAsync(u.getId());
+        log.warn("upload id={} (exam={}) dump-check OVERRIDDEN by {} — re-processing",
+                u.getId(), u.getExamSlug(), currentEmail(auth));
+        flash.addFlashAttribute("overrideMessage",
+                "Dump-check override applied to '" + u.getOriginalName() +
+                "'. Re-extracting now — review the resulting questions carefully at /admin/questions before approving.");
         return "redirect:/uploads";
     }
 

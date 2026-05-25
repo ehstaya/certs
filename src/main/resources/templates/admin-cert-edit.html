@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Edit certification — Admin Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="/js/confirm.js" defer></script>
+  <style>
+    .edit-cert-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; align-items: end; }
+    .edit-cert-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .edit-cert-form input,
+    .edit-cert-form textarea,
+    .edit-cert-form select {
+      padding: 8px 10px;
+      border: 1px solid var(--gray-300, #d1d5db);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #fff;
+    }
+    .edit-cert-form textarea { min-height: 60px; }
+    .edit-cert-form .submit-row { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
+    .topic-list { margin: 8px 0 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+    .topic-list li {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 8px 12px;
+      background: #fff;
+      border: 1px solid var(--gray-200, #e5e7eb);
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .topic-list .topic-name { color: var(--brand-navy, #032D60); font-weight: 600; }
+    .topic-list .topic-weight { color: var(--brand-primary, #0176D3); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .topic-list .topic-key { color: var(--gray-500, #6b7280); font-size: 11px; font-family: ui-monospace, SFMono-Regular, monospace; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link user-link" href="/">Exams</a>
+    <a class="topbar-link user-link" href="/my/reports">My reports</a>
+    <a class="topbar-link user-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".superadmin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".user-link").forEach(e=>e.style.display="none");}
+  });
+})();
+</script>
+
+<main class="admin-wrap">
+  <p class="muted" style="margin-bottom:12px;">
+    <a href="/admin">‹ Admin Dashboard</a>
+    &nbsp;·&nbsp;
+    <a href="/admin/certifications">‹ Certifications</a>
+  </p>
+  <h1>Edit certification: <span th:text="${exam.name}">Name</span></h1>
+  <p class="muted">
+    Update the cert's basic metadata or republish the topic breakdown.
+    The <strong>slug</strong> is immutable — changing it would orphan persisted
+    questions, attempts, and assignments. To deactivate a cert, untick
+    "Active": it stops appearing on the exam picker but existing data is kept.
+  </p>
+
+  <section class="admin-section">
+    <form method="post" th:action="@{|/admin/certifications/${exam.id}/update|}" class="edit-cert-form" enctype="multipart/form-data">
+      <label>
+        <span>Certification name *</span>
+        <input type="text" name="name" required th:value="${exam.name}" autocomplete="off" />
+      </label>
+      <label>
+        <span>Slug (read-only)</span>
+        <input type="text" th:value="${exam.slug}" readonly style="background:#f9fafb;color:var(--gray-500,#6b7280);" />
+      </label>
+      <label>
+        <span>Description</span>
+        <textarea name="description" th:text="${exam.description}">desc</textarea>
+      </label>
+      <label>
+        <span>Questions / session</span>
+        <input type="number" name="questionsPerSession" th:value="${exam.questionsPerSession}" min="5" max="200" />
+      </label>
+      <label>
+        <span>Duration (minutes)</span>
+        <input type="number" name="durationMinutes" th:value="${exam.durationMinutes}" min="5" max="600" />
+      </label>
+      <label>
+        <span>Passing score (%)</span>
+        <input type="number" name="passingScorePercent" th:value="${exam.passingScorePercent}" min="1" max="100" />
+      </label>
+      <label>
+        <span>Status</span>
+        <select name="active">
+          <option value="true"  th:selected="${exam.active}">Active — shown on the exam picker</option>
+          <option value="false" th:selected="${!exam.active}">Inactive — hidden from learners</option>
+        </select>
+      </label>
+
+      <div style="grid-column: 1 / -1;">
+        <h2 style="margin:14px 0 8px;font-size:15px;color:var(--brand-navy,#032D60);">
+          Current topic breakdown
+          <span class="muted" style="font-weight:400;font-size:12px;"
+                th:text="|${#lists.size(topics)} topic(s)|">— topics</span>
+        </h2>
+        <p class="muted" style="font-size:13px;">
+          Below is what's saved right now. To <strong>republish</strong>, paste a fresh breakdown or upload a new screenshot.
+          The existing topics will be wiped and replaced when you save. Leave both empty to keep them unchanged.
+        </p>
+        <div class="empty" th:if="${#lists.isEmpty(topics)}" style="margin-top:6px;">
+          No topic breakdown saved yet. Add one below.
+        </div>
+        <ul class="topic-list" th:unless="${#lists.isEmpty(topics)}">
+          <li th:each="t : ${topics}">
+            <div>
+              <span class="topic-name" th:text="${t.name}">Topic</span>
+              <span class="topic-key" th:text="|· ${t.topicKey}|">slug</span>
+            </div>
+            <div class="topic-weight" th:text="|${t.weightPercent}%|">0%</div>
+          </li>
+        </ul>
+      </div>
+
+      <label style="grid-column: 1 / -1;">
+        <span>Republish topic breakdown — paste (optional)</span>
+        <textarea name="breakdown" rows="6"
+                  placeholder="Configuration and Setup: 20%&#10;Object Manager and Lightning App Builder: 20%&#10;..."
+                  style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:13px;"></textarea>
+      </label>
+      <label style="grid-column: 1 / -1;">
+        <span>…or upload a new screenshot of the breakdown (optional)</span>
+        <input type="file" name="breakdownImage" accept="image/png,image/jpeg,image/gif,image/webp" />
+        <span class="muted" style="font-size:11px;margin-top:4px;">
+          Both inputs are optional — leave blank to keep the current breakdown.
+          If you supply either, the existing topics are wiped and replaced.
+        </span>
+      </label>
+
+      <div class="submit-row">
+        <button class="btn btn-primary" type="submit">Save changes</button>
+        <a class="btn btn-link" href="/admin/certifications">Cancel</a>
+      </div>
+    </form>
+  </section>
+</main>
+</body>
+</html>

@@ -132,6 +132,9 @@
           </span>
           <div class="cert-row-meta" th:if="${e.description != null and !#strings.isEmpty(e.description)}" th:text="${e.description}">desc</div>
         </div>
+        <div>
+          <a class="btn btn-sm" th:href="@{|/admin/certifications/${e.id}/edit|}">Edit / Republish</a>
+        </div>
       </div>
     </div>
   </section>

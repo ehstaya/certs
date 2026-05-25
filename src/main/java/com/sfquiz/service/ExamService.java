@@ -126,6 +126,70 @@ public class ExamService {
         return saved;
     }
 
+    /** Update basic metadata on an existing cert. Slug is immutable —
+     *  changing it would orphan persisted questions, attempts, votes, and
+     *  domain-admin assignments that key off it. Optional {@code newTopics}
+     *  replaces every {@link ExamTopic} for the exam atomically; pass
+     *  {@code null} or empty to keep the existing breakdown. Used by the
+     *  super-admin Edit + Republish flow. */
+    @org.springframework.transaction.annotation.Transactional
+    public Exam updateExam(Long id, String name, String description,
+                           int questionsPerSession, int durationMinutes,
+                           int passingScorePercent,
+                           boolean active,
+                           List<TopicBreakdownParser.TopicWeight> newTopics) {
+        if (id == null) throw new IllegalArgumentException("Cert id is required.");
+        Exam e = exams.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown certification: " + id));
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Certification name cannot be blank.");
+        }
+        e.setName(name.trim());
+        e.setDescription(description == null ? "" : description.trim());
+        e.setQuestionsPerSession(clamp(questionsPerSession, 5, 200, e.getQuestionsPerSession()));
+        e.setDurationMinutes(clamp(durationMinutes, 5, 600, e.getDurationMinutes()));
+        e.setPassingScorePercent(clamp(passingScorePercent, 1, 100, e.getPassingScorePercent()));
+        e.setActive(active);
+        exams.save(e);
+
+        if (newTopics != null && !newTopics.isEmpty()) {
+            replaceTopicsFor(e, newTopics);
+        }
+        return e;
+    }
+
+    /** Wipe every existing ExamTopic for {@code exam} and re-insert from the
+     *  supplied list. Stays in one transaction so a partial failure can't
+     *  leave the cert with a frankenstein topic mix. */
+    @org.springframework.transaction.annotation.Transactional
+    public void replaceTopicsFor(Exam exam, List<TopicBreakdownParser.TopicWeight> topics) {
+        if (exam == null) return;
+        List<ExamTopic> existing = examTopics.findByExamOrderBySortOrderAscIdAsc(exam);
+        for (ExamTopic et : existing) {
+            examTopics.delete(et);
+        }
+        if (topics == null) return;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        int order = 10;
+        for (TopicBreakdownParser.TopicWeight t : topics) {
+            if (t == null || t.topicKey() == null || t.topicKey().isBlank()) continue;
+            if (!seen.add(t.topicKey())) continue;
+            ExamTopic et = new ExamTopic();
+            et.setExam(exam);
+            et.setTopicKey(t.topicKey());
+            et.setName(t.name());
+            et.setWeightPercent(t.weightPercent());
+            et.setSortOrder(order);
+            order += 10;
+            examTopics.save(et);
+        }
+    }
+
+    public Exam findById(Long id) {
+        if (id == null) return null;
+        return exams.findById(id).orElse(null);
+    }
+
     /** All exams (active and otherwise) for the management list. */
     public List<Exam> listAllOrdered() {
         return exams.findAll().stream()

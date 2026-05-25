@@ -125,20 +125,31 @@
     </div>
   </form>
 
-  <!-- Bottom-of-page destructive action — behavior depends on current status:
-       APPROVED → soft delete (moves to retired queue)
-       RETIRED  → hard delete (permanent removal from the DB) -->
-  <div th:if="${q.status.name() == 'APPROVED'}" style="margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--gray-200, #e5e7eb);">
+  <!-- Bottom-of-page destructive actions. Domain admins for this cert get
+       BOTH soft-delete (retire, recoverable) and permanent-delete (hard,
+       gone from the DB) on every status — picking the right one is up to
+       them. The server enforces canManageQuestion on both endpoints. -->
+  <div th:if="${q.status.name() == 'APPROVED' or q.status.name() == 'PENDING'}"
+       style="margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--gray-200, #e5e7eb); display:flex; gap:14px; flex-wrap:wrap; align-items:center;">
     <form method="post" th:action="@{|/admin/questions/${q.id}/delete|}" style="display:inline">
       <input type="hidden" name="returnTo" value="/admin/questions/approved" />
       <button class="btn btn-danger btn-sm" type="submit"
               data-confirm-title="Retire this question"
               data-confirm="Move this question to the retired queue?&#10;&#10;It will be hidden from the live quiz but you can restore or permanently delete it later from /admin/questions/retired."
               data-confirm-ok="Retire">
-        Retire this question
+        Retire (soft delete)
       </button>
-      <span class="hint" style="margin-left:8px">Soft delete — hides from learners but you can restore later.</span>
     </form>
+    <form method="post" th:action="@{|/admin/questions/${q.id}/permanently-delete|}" style="display:inline">
+      <button class="btn btn-danger btn-sm" type="submit"
+              style="background:#7f1d1d;"
+              data-confirm-title="Permanently delete this question?"
+              data-confirm="This removes the question, its choices, and any test-attempt history that references it from the database. CANNOT be undone.&#10;&#10;Prefer Retire if you might want to restore it later."
+              data-confirm-ok="Delete permanently">
+        Permanently delete
+      </button>
+    </form>
+    <span class="hint">Retire is recoverable; Permanent delete is gone-forever.</span>
   </div>
   <div th:if="${q.status.name() == 'RETIRED'}" style="margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--gray-200, #e5e7eb);">
     <form method="post" th:action="@{|/admin/questions/${q.id}/permanently-delete|}" style="display:inline">
