@@ -190,7 +190,12 @@ public class TestAttemptService {
     /** Fetch the per-question detail for an attempt owned by {@code userEmail}.
      *  {@code filter} selects "correct", "incorrect", or "all". Throws if the
      *  attempt doesn't belong to the caller — keeps users from peeking at
-     *  each other's results by guessing ids. */
+     *  each other's results by guessing ids.
+     *
+     *  Read-only @Transactional so the lazy {@code TestAttempt.user} proxy
+     *  stays initializable for the duration of the ownership check + the
+     *  per-answer Question/Choice walks the template later does. */
+    @Transactional(readOnly = true)
     public AttemptDetailView attemptDetail(String userEmail, Long attemptId, String filter) {
         TestAttempt a = attempts.findById(attemptId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown attempt id"));
