@@ -37,12 +37,16 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
                         "/login", "/logout",
-                        "/register",
                         "/forgot-password",
                         "/reset-password",
                         "/css/**", "/js/**", "/images/**", "/webjars/**",
                         "/favicon.ico", "/error"
                 ).permitAll()
+                // Self-signup is disabled — accounts are issued by the
+                // SUPERADMIN via /admin/users. Both the sign-in link and
+                // the route itself are removed so a stale bookmark or
+                // crawled URL can't create accounts behind your back.
+                .requestMatchers("/register").denyAll()
                 // User-management, cross-cert reports, and certification
                 // management are all SUPERADMIN-only — domain admins can
                 // only manage questions on the exam(s) they govern.
@@ -69,7 +73,17 @@ public class SecurityConfig {
                 .loginProcessingUrl("/login")
                 .usernameParameter("email")
                 .passwordParameter("password")
-                .defaultSuccessUrl("/", true)
+                // Role-aware landing: SUPERADMIN goes to /admin (their
+                // dashboard), everyone else (USER, VERIFIER, ADMIN) lands
+                // on the exam picker. Domain admins reach their review
+                // queue from the top-nav "Questions" link — they get to
+                // see the user-facing /exams.html first so they can
+                // self-test too.
+                .successHandler((req, res, authn) -> {
+                    boolean isSuper = authn.getAuthorities().stream()
+                            .anyMatch(a -> "ROLE_SUPERADMIN".equals(a.getAuthority()));
+                    res.sendRedirect(isSuper ? "/admin" : "/");
+                })
                 .failureUrl("/login?error")
                 .permitAll()
             )

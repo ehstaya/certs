@@ -26,11 +26,11 @@
 <header class="topbar">
   <div class="brand">Certification Practice Playground</div>
   <div class="topbar-actions">
-    <a class="topbar-link" href="/">Exams</a>
-    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link user-link" href="/">Exams</a>
+    <a class="topbar-link user-link" href="/my/reports">My reports</a>
     <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
     <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
-    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link user-link" href="/uploads">Uploads</a>
     <a class="topbar-link" href="/change-password">Change password</a>
     <span class="topbar-user" id="userBadge"></span>
     <form method="post" action="/logout" style="display:inline">
@@ -48,8 +48,9 @@
       if(!el) return;
       const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
       el.textContent=name+" ("+(d.role||"USER")+")";
-    if(d.role==="ADMIN"||d.role==="SUPERADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+    if(d.role==="ADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
     if(d.role==="SUPERADMIN"){document.querySelectorAll(".superadmin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".user-link").forEach(e=>e.style.display="none");}
     });
 })();
 </script>

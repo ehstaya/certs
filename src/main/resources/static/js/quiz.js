@@ -112,11 +112,14 @@
       // Back-compat: older pages may still have #userName around.
       const legacy = document.getElementById("userName");
       if (legacy) legacy.textContent = name;
-      if (role === "ADMIN" || role === "SUPERADMIN") {
+      if (role === "ADMIN") {
         document.querySelectorAll(".admin-only").forEach(el => { el.style.display = ""; });
       }
       if (role === "SUPERADMIN") {
         document.querySelectorAll(".superadmin-only").forEach(el => { el.style.display = ""; });
+      }
+      if (role === "SUPERADMIN") {
+        document.querySelectorAll(".user-link").forEach(el => { el.style.display = "none"; });
       }
       // Detect a server restart by comparing the bootId returned now against
       // the one we stored on the previous load. Mismatch ⇒ any persisted
