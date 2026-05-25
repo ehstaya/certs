@@ -116,6 +116,7 @@ public class SlackNotifier {
 
     /** Send the digest immediately, ignoring the 24h throttle. Used by the
      *  /admin "Send test Slack message" button. */
+    @Transactional
     public boolean postDigestForce(String reason) {
         if (!isConfigured()) return false;
         long pending = countPending();

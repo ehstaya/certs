@@ -28,7 +28,11 @@ public class DomainAdminAssignment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    // Both relations are EAGER. The assignment row count per user is small
+    // (you can't be a domain admin for hundreds of exams), and the
+    // Slack-digest path reads user.email/fullName outside the request
+    // transaction — lazy loading there would throw LazyInitializationException.
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
