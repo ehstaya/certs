@@ -2,9 +2,16 @@ package com.sfquiz.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sfquiz.entity.AppSetting;
+import com.sfquiz.entity.DomainAdminAssignment;
+import com.sfquiz.entity.Exam;
 import com.sfquiz.entity.Question;
+import com.sfquiz.entity.User;
+import com.sfquiz.entity.UserRole;
+import com.sfquiz.entity.UserStatus;
 import com.sfquiz.repository.AppSettingRepository;
+import com.sfquiz.repository.DomainAdminAssignmentRepository;
 import com.sfquiz.repository.QuestionRepository;
+import com.sfquiz.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +28,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 
 /** Posts a digest message to a single Slack incoming webhook whenever there
  *  are pending questions awaiting domain-admin review. The 24-hour cadence
@@ -43,6 +49,8 @@ public class SlackNotifier {
 
     private final QuestionRepository questions;
     private final AppSettingRepository settings;
+    private final DomainAdminAssignmentRepository assignments;
+    private final UserRepository users;
     private final ObjectMapper json;
 
     /** First try the Spring property {@code app.slack.webhook-url} (also
@@ -59,9 +67,15 @@ public class SlackNotifier {
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    public SlackNotifier(QuestionRepository questions, AppSettingRepository settings, ObjectMapper json) {
+    public SlackNotifier(QuestionRepository questions,
+                         AppSettingRepository settings,
+                         DomainAdminAssignmentRepository assignments,
+                         UserRepository users,
+                         ObjectMapper json) {
         this.questions = questions;
         this.settings = settings;
+        this.assignments = assignments;
+        this.users = users;
         this.json = json;
     }
 
@@ -112,7 +126,7 @@ public class SlackNotifier {
     }
 
     private boolean postDigestNow(long totalPending) {
-        Map<String, Long> byExam = countPendingByExam();
+        Map<Exam, Long> byExam = countPendingByExamEntity();
         String text = buildDigestText(totalPending, byExam);
         try {
             String body = json.writeValueAsString(Map.of("text", text));
@@ -139,35 +153,109 @@ public class SlackNotifier {
         return questions.countByStatus(Question.Status.PENDING);
     }
 
-    /** Pending question count broken down by exam name, sorted by largest
-     *  backlog first so the most important exam leads the digest. */
-    private Map<String, Long> countPendingByExam() {
+    /** Pending question count broken down by exam ENTITY (not just name) so
+     *  the digest builder can look up the matching domain-admin assignments
+     *  per exam and ping them by name. Sorted by largest backlog first. */
+    private Map<Exam, Long> countPendingByExamEntity() {
         List<Question> pending = questions.findByStatusOrderByNumber(Question.Status.PENDING);
-        Map<String, Long> byName = new TreeMap<>();
+        // Group via exam id so equal-by-pk Exam proxies don't fragment.
+        Map<Long, Exam> examById = new java.util.HashMap<>();
+        Map<Long, Long> countById = new java.util.HashMap<>();
         for (Question q : pending) {
-            String name = (q.getExam() == null) ? "(no exam)" : q.getExam().getName();
-            byName.merge(name, 1L, Long::sum);
+            Exam ex = q.getExam();
+            if (ex == null) continue;
+            examById.putIfAbsent(ex.getId(), ex);
+            countById.merge(ex.getId(), 1L, (a, b) -> a + b);
         }
-        // Re-order by descending count.
-        LinkedHashMap<String, Long> sorted = new LinkedHashMap<>();
-        byName.entrySet().stream()
+        LinkedHashMap<Exam, Long> sorted = new LinkedHashMap<>();
+        countById.entrySet().stream()
                 .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
-                .forEach(e -> sorted.put(e.getKey(), e.getValue()));
+                .forEach(e -> sorted.put(examById.get(e.getKey()), e.getValue()));
         return sorted;
     }
 
-    private String buildDigestText(long total, Map<String, Long> byExam) {
+    private String buildDigestText(long total, Map<Exam, Long> byExam) {
         StringBuilder sb = new StringBuilder();
         sb.append("📋 *Certification Practice Playground — pending review*\n");
         sb.append("*").append(total).append("* question");
         if (total != 1) sb.append("s");
         sb.append(" awaiting domain-admin approval:\n");
-        for (Map.Entry<String, Long> e : byExam.entrySet()) {
-            sb.append("• ").append(e.getKey()).append(": *").append(e.getValue()).append("*\n");
+
+        // Pre-resolve the SUPERADMIN list once — used as the fallback ping
+        // when an exam has no domain admins assigned yet.
+        List<User> superAdmins = activeUsersByRole(UserRole.SUPERADMIN);
+
+        for (Map.Entry<Exam, Long> e : byExam.entrySet()) {
+            Exam exam = e.getKey();
+            long count = e.getValue();
+            sb.append("\n*").append(exam.getName()).append("*: ").append(count).append("\n");
+
+            List<User> domainAdmins = domainAdminsFor(exam);
+            if (!domainAdmins.isEmpty()) {
+                sb.append("Domain admin");
+                if (domainAdmins.size() > 1) sb.append("s");
+                sb.append(":");
+                for (User u : domainAdmins) {
+                    sb.append("\n@").append(mentionFor(u));
+                }
+                sb.append("\n");
+            } else if (!superAdmins.isEmpty()) {
+                sb.append("_No domain admins assigned — pinging super admin");
+                if (superAdmins.size() > 1) sb.append("s");
+                sb.append(" as fallback:_");
+                for (User u : superAdmins) {
+                    sb.append("\n@").append(mentionFor(u));
+                }
+                sb.append("\n");
+            } else {
+                sb.append("_No domain admins or super admins on file._\n");
+            }
         }
+
         sb.append("\n→ Review queue: ").append(reviewQueueUrl());
         sb.append("\n_(You'll get another nudge in ~24h until the queue is cleared.)_");
         return sb.toString();
+    }
+
+    /** Active domain admins for an exam. ADMIN/SUPERADMIN users with an
+     *  assignment row count; inactive users (disabled/rejected) are filtered
+     *  out so we never ping someone who can't act on the message. */
+    private List<User> domainAdminsFor(Exam exam) {
+        if (exam == null) return List.of();
+        List<DomainAdminAssignment> rows = assignments.findByExam(exam);
+        List<User> out = new java.util.ArrayList<>();
+        for (DomainAdminAssignment a : rows) {
+            User u = a.getUser();
+            if (u == null) continue;
+            if (u.getStatus() != UserStatus.ACTIVE) continue;
+            out.add(u);
+        }
+        // Stable name order so the digest reads the same way every time.
+        out.sort((a, b) -> mentionFor(a).compareToIgnoreCase(mentionFor(b)));
+        return out;
+    }
+
+    private List<User> activeUsersByRole(UserRole role) {
+        List<User> out = new java.util.ArrayList<>();
+        for (User u : users.findAll()) {
+            if (u.getRole() == role && u.getStatus() == UserStatus.ACTIVE) {
+                out.add(u);
+            }
+        }
+        out.sort((a, b) -> mentionFor(a).compareToIgnoreCase(mentionFor(b)));
+        return out;
+    }
+
+    /** Builds the @-mention string for a user. We prefer the full name when
+     *  set so the message reads naturally; otherwise fall back to email.
+     *  Slack soft-links these for users whose Slack display name or email
+     *  matches; either way the domain admin is clearly named in the digest. */
+    private String mentionFor(User u) {
+        if (u == null) return "(unknown)";
+        if (u.getFullName() != null && !u.getFullName().isBlank()) {
+            return u.getFullName().trim();
+        }
+        return u.getEmail();
     }
 
     private String reviewQueueUrl() {

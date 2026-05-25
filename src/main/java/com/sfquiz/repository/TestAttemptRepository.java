@@ -37,4 +37,10 @@ public interface TestAttemptRepository extends JpaRepository<TestAttempt, Long> 
            "         a.exam.id, a.exam.slug, a.exam.name, a.exam.passingScorePercent " +
            "ORDER BY a.user.email ASC, a.exam.slug ASC")
     List<Object[]> allUserExamSummaries();
+
+    /** Every attempt for one exam, chronological. Drives the admin
+     *  cert-trend chart — we bucket the result by week in the service. */
+    @Query("SELECT a FROM TestAttempt a WHERE a.exam.slug = :slug " +
+           "ORDER BY a.finishedAt ASC")
+    List<TestAttempt> findByExamSlugChronological(@Param("slug") String slug);
 }

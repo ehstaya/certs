@@ -64,6 +64,10 @@
     <a href="/admin/reports/scores" th:classappend="${section == 'scores'} ? 'active' : ''">
       <span aria-hidden="true">🎯</span> All-user scores
     </a>
+    <div class="reports-tree-section">Performance</div>
+    <a href="/admin/reports/cert-trend" th:classappend="${section == 'cert-trend'} ? 'active' : ''">
+      <span aria-hidden="true">📈</span> Cert score trend
+    </a>
     <div class="reports-tree-section">Quality</div>
     <a href="/admin/reports/quality" th:classappend="${section == 'quality'} ? 'active' : ''">
       <span aria-hidden="true">👍</span> Question quality

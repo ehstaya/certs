@@ -14,10 +14,18 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import com.sfquiz.entity.TestAttempt;
+
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Admin reports section. The landing page is a Dashboard; individual report
  *  views live underneath. The left-side tree in each report template lets the
@@ -218,6 +226,132 @@ public class ReportsController {
         model.addAttribute("role", roleFilter == null ? "" : roleFilter.name());
         model.addAttribute("section", "scores");
         return "all-user-scores-report";
+    }
+
+    /** One weekly bucket on the cert-trend chart. */
+    public record CertTrendWeek(
+            LocalDate weekStart,   // Monday of the bucket
+            int attempts,          // count in the bucket
+            int avgScorePercent,
+            int passRatePercent,
+            int distinctUsers
+    ) {}
+
+    /** Per-cert score trend across the whole user base — drives the admin
+     *  "is this exam improving or declining?" view. Aggregates all attempts
+     *  for one exam into weekly buckets so admins can spot training needs. */
+    @GetMapping("/cert-trend")
+    public String certTrend(@RequestParam(name = "exam", required = false) String exam, Model model) {
+        List<ExamDto> exams = examService.listActive();
+        // Default to the first active exam if none supplied (or the slug is bogus).
+        final String requested = exam;
+        String resolved = exam;
+        if (requested == null || requested.isBlank() || exams.stream().noneMatch(e -> e.slug().equals(requested))) {
+            resolved = exams.isEmpty() ? null : exams.get(0).slug();
+        }
+        exam = resolved;
+        final String slug = resolved;
+        ExamDto examMeta = exams.stream().filter(e -> e.slug().equals(slug)).findFirst().orElse(null);
+        int passingPct = examMeta != null ? examMeta.passingScorePercent() : 65;
+
+        List<TestAttempt> chronological = (slug == null)
+                ? List.of()
+                : attempts.findByExamSlugChronological(slug);
+
+        // Bucket by ISO week (Monday → Sunday). Map preserves insertion order
+        // so the first week with any data is the leftmost bucket on the chart.
+        record Bucket(int count, double scoreSum, int passes, java.util.Set<Long> userIds) {
+            Bucket add(int score, boolean passed, Long userId) {
+                java.util.Set<Long> u = new java.util.HashSet<>(userIds);
+                if (userId != null) u.add(userId);
+                return new Bucket(count + 1, scoreSum + score, passes + (passed ? 1 : 0), u);
+            }
+        }
+        LinkedHashMap<LocalDate, Bucket> buckets = new LinkedHashMap<>();
+        for (TestAttempt a : chronological) {
+            LocalDate week = a.getFinishedAt()
+                    .atZone(ZoneOffset.UTC).toLocalDate()
+                    .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            Long uid = a.getUser() == null ? null : a.getUser().getId();
+            buckets.merge(week, new Bucket(1, a.getScorePercent(), a.isPassed() ? 1 : 0,
+                            uid == null ? java.util.Set.of() : java.util.Set.of(uid)),
+                    (oldB, newB) -> oldB.add(a.getScorePercent(), a.isPassed(), uid));
+        }
+
+        List<CertTrendWeek> weeks = new ArrayList<>();
+        for (Map.Entry<LocalDate, Bucket> e : buckets.entrySet()) {
+            Bucket b = e.getValue();
+            int avg = (int) Math.round(b.scoreSum() / Math.max(1, b.count()));
+            int pass = (int) Math.round(100.0 * b.passes() / Math.max(1, b.count()));
+            weeks.add(new CertTrendWeek(e.getKey(), b.count(), avg, pass, b.userIds().size()));
+        }
+
+        // Chart geometry — line-first, identical look-and-feel to the
+        // user trend so admins don't have to re-learn anything.
+        int n = weeks.size();
+        int slots = Math.max(5, ((n + 4) / 5) * 5);
+        int chartW = 720, chartH = 240, padL = 44, padR = 18, padT = 18, padB = 44;
+        StringBuilder points = new StringBuilder();
+        List<int[]> markers = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            CertTrendWeek w = weeks.get(i);
+            int x = padL + (int) Math.round((double) (chartW - padL - padR) * i / Math.max(1, slots - 1));
+            int y = padT + (int) Math.round((chartH - padT - padB) * (1.0 - w.avgScorePercent() / 100.0));
+            if (i > 0) points.append(' ');
+            points.append(x).append(',').append(y);
+            markers.add(new int[]{x, y, w.avgScorePercent(),
+                    w.avgScorePercent() >= passingPct ? 1 : 0, w.attempts(), w.passRatePercent(), w.distinctUsers()});
+        }
+        List<int[]> xTicks = new ArrayList<>();
+        List<String> xLabels = new ArrayList<>();
+        for (int i = 0; i < slots; i++) {
+            int x = padL + (int) Math.round((double) (chartW - padL - padR) * i / Math.max(1, slots - 1));
+            xTicks.add(new int[]{x, i + 1});
+            xLabels.add(i < n ? weeks.get(i).weekStart().toString() : "");
+        }
+        int passY = padT + (int) Math.round((chartH - padT - padB) * (1.0 - passingPct / 100.0));
+
+        // Direction call: did the last week's avg improve vs. the first?
+        // Coarse but admins want a one-glance signal.
+        String direction = "flat";
+        int deltaPct = 0;
+        if (n >= 2) {
+            int first = weeks.get(0).avgScorePercent();
+            int last = weeks.get(n - 1).avgScorePercent();
+            deltaPct = last - first;
+            if (deltaPct >= 3)        direction = "improving";
+            else if (deltaPct <= -3)  direction = "declining";
+        }
+        int totalAttempts = weeks.stream().mapToInt(CertTrendWeek::attempts).sum();
+        int overallAvg = chronological.isEmpty() ? 0
+                : (int) Math.round(chronological.stream().mapToInt(TestAttempt::getScorePercent).average().orElse(0));
+        int overallPassRate = chronological.isEmpty() ? 0
+                : (int) Math.round(100.0 * chronological.stream().mapToInt(a -> a.isPassed() ? 1 : 0).sum() / chronological.size());
+
+        model.addAttribute("exams", exams);
+        model.addAttribute("exam", exam == null ? "" : exam);
+        model.addAttribute("examName", examMeta == null ? "—" : examMeta.name());
+        model.addAttribute("passingPct", passingPct);
+        model.addAttribute("weeks", weeks);
+        model.addAttribute("totalAttempts", totalAttempts);
+        model.addAttribute("overallAvg", overallAvg);
+        model.addAttribute("overallPassRate", overallPassRate);
+        model.addAttribute("direction", direction);
+        model.addAttribute("deltaPct", deltaPct);
+        model.addAttribute("chartW", chartW);
+        model.addAttribute("chartH", chartH);
+        model.addAttribute("padL", padL);
+        model.addAttribute("padR", padR);
+        model.addAttribute("padT", padT);
+        model.addAttribute("padB", padB);
+        model.addAttribute("polyPoints", points.toString());
+        model.addAttribute("markers", markers);
+        model.addAttribute("xTicks", xTicks);
+        model.addAttribute("xLabels", xLabels);
+        model.addAttribute("slots", slots);
+        model.addAttribute("passY", passY);
+        model.addAttribute("section", "cert-trend");
+        return "cert-trend-report";
     }
 
     /** Per-question quality (thumbs up/down) report + cross-exam leaderboard. */

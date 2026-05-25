@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports — Cert score trend</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+  <style>
+    .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 320px; background: #fff; }
+    .trend-chart { width: 100%; max-width: 740px; background: #fff; border: 1px solid var(--gray-200, #e5e7eb); border-radius: 8px; padding: 8px; }
+    .trend-axis { stroke: var(--gray-300, #d1d5db); stroke-width: 1; }
+    .trend-axis-faint { stroke: var(--gray-200, #e5e7eb); stroke-width: 1; stroke-dasharray: 2 3; }
+    .trend-tick { fill: var(--gray-500, #6b7280); font-size: 10px; }
+    .trend-pass-line { stroke: #f59e0b; stroke-width: 2; stroke-dasharray: 6 4; }
+    .trend-pass-label { fill: #92400e; font-size: 11px; font-weight: 600; }
+    .trend-line { fill: none; stroke: var(--brand-primary, #0176D3); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .trend-mark { stroke-width: 2; }
+    .trend-mark-pass { fill: #fff; stroke: #047857; }
+    .trend-mark-fail { fill: #fff; stroke: #b91c1c; }
+    .legend { display: flex; gap: 18px; font-size: 13px; color: var(--gray-700, #374151); margin: 8px 0 16px; flex-wrap: wrap; }
+    .legend-swatch { display: inline-block; width: 12px; height: 12px; vertical-align: middle; margin-right: 6px; border-radius: 50%; }
+    .legend-line { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 2px; background: var(--brand-primary, #0176D3); }
+    .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 12px 0 18px; }
+    .summary-card { padding: 12px 16px; border-radius: 10px; background: #f9fafb; border: 1px solid var(--gray-200, #e5e7eb); }
+    .summary-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-500, #6b7280); }
+    .summary-card-value { font-size: 24px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .direction-pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 600; font-size: 12px; letter-spacing: 0.3px; }
+    .direction-pill.improving { background: #d1fae5; color: #065f46; }
+    .direction-pill.declining { background: #fee2e2; color: #991b1b; }
+    .direction-pill.flat      { background: #e5e7eb; color: #374151; }
+    .needs-help-banner { background: #fef2f2; border-left: 3px solid #b91c1c; padding: 10px 14px; border-radius: 4px; margin: 12px 0; color: #7f1d1d; }
+    .doing-well-banner { background: #ecfdf5; border-left: 3px solid #047857; padding: 10px 14px; border-radius: 4px; margin: 12px 0; color: #065f46; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/admin">Users</a>
+    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
+    <a class="topbar-link" href="/admin/reports">Reports</a>
+    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree">
+    <div class="reports-tree-section">Reports</div>
+    <a href="/admin/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''"><span>📊</span> Dashboard</a>
+    <div class="reports-tree-section">People</div>
+    <a href="/admin/reports/scores" th:classappend="${section == 'scores'} ? 'active' : ''"><span>🎯</span> All-user scores</a>
+    <div class="reports-tree-section">Performance</div>
+    <a href="/admin/reports/cert-trend" th:classappend="${section == 'cert-trend'} ? 'active' : ''"><span>📈</span> Cert score trend</a>
+    <div class="reports-tree-section">Quality</div>
+    <a href="/admin/reports/quality" th:classappend="${section == 'quality'} ? 'active' : ''"><span>👍</span> Question quality</a>
+    <a href="/admin/reports/verifier-feedback" th:classappend="${section == 'verifier-feedback'} ? 'active' : ''"><span>📝</span> Verifier feedback</a>
+  </aside>
+
+  <main class="reports-content">
+    <h1>Cert score trend</h1>
+    <p class="muted">Weekly average score across <strong>all users</strong> who attempted this certification, oldest left → newest right. Use this to spot a certification where the cohort is <strong>declining</strong> and needs more training intervention, or one that's <strong>improving</strong> and the material is landing well.</p>
+
+    <form method="get" action="/admin/reports/cert-trend" class="filter-bar">
+      <label>
+        <span>Certification</span>
+        <select name="exam" onchange="this.form.submit()">
+          <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}" th:selected="${ex.slug == exam}">Exam</option>
+        </select>
+      </label>
+    </form>
+
+    <div class="empty" th:if="${#lists.isEmpty(weeks)}">
+      No attempts yet for <strong th:text="${examName}">this cert</strong>. The trend chart fills in once users start finishing practice sessions on this exam.
+    </div>
+
+    <div th:unless="${#lists.isEmpty(weeks)}">
+      <section class="summary-cards">
+        <div class="summary-card">
+          <div class="summary-card-label">Total attempts</div>
+          <div class="summary-card-value" th:text="${totalAttempts}">0</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Overall avg</div>
+          <div class="summary-card-value" th:text="${overallAvg + '%'}">0%</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Overall pass rate</div>
+          <div class="summary-card-value" th:text="${overallPassRate + '%'}">0%</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Trend direction</div>
+          <div class="summary-card-value" style="font-size:14px;">
+            <span class="direction-pill"
+                  th:classappend="${direction}"
+                  th:text="${direction == 'improving' ? '↗ Improving' : (direction == 'declining' ? '↘ Declining' : '→ Flat')}">flat</span>
+            <span th:if="${deltaPct != 0}"
+                  th:text="|(${deltaPct > 0 ? '+' : ''}${deltaPct}% vs. first week)|"
+                  class="muted"
+                  style="font-size:11px; display:block; margin-top:4px;">vs first week</span>
+          </div>
+        </div>
+      </section>
+
+      <div th:if="${direction == 'declining'}" class="needs-help-banner">
+        ⚠ <strong>Cohort declining</strong> on <span th:text="${examName}">this cert</span> — average is down
+        <strong th:text="${-deltaPct + '%'}">3%</strong> from the first week with data. Consider adding training material, reviewing question quality, or running a refresher session.
+      </div>
+      <div th:if="${direction == 'improving'}" class="doing-well-banner">
+        ✓ <strong>Cohort improving</strong> on <span th:text="${examName}">this cert</span> — average is up
+        <strong th:text="${deltaPct + '%'}">3%</strong> since the first week. The material is landing well.
+      </div>
+
+      <div class="legend">
+        <span><span class="legend-line"></span>Weekly average (<strong th:text="${#lists.size(weeks)}">0</strong>
+          of <strong th:text="${slots}">5</strong> slots used)</span>
+        <span><span class="legend-swatch" style="background:#f59e0b"></span>Passing threshold: <strong th:text="${passingPct + '%'}">65%</strong></span>
+      </div>
+
+      <p class="muted" th:if="${#lists.size(weeks) == 1}"
+         style="background:#fef3c7;border-left:3px solid #f59e0b;padding:8px 12px;border-radius:4px;">
+        ℹ Only one week of data so far — the trend line appears once a second week of attempts arrives.
+      </p>
+
+      <svg class="trend-chart" th:attr="viewBox=|0 0 ${chartW} ${chartH}|" preserveAspectRatio="xMidYMid meet">
+        <!-- Y axis: 0/25/50/75/100% -->
+        <g>
+          <th:block th:each="t : ${ {0,25,50,75,100} }">
+            <line class="trend-axis"
+                  th:x1="${padL}"
+                  th:attr="y1=${padT + (chartH - padT - padB) * (100 - t) / 100},y2=${padT + (chartH - padT - padB) * (100 - t) / 100}"
+                  th:x2="${chartW - padR}" />
+            <text class="trend-tick"
+                  th:x="${padL - 6}"
+                  th:y="${padT + (chartH - padT - padB) * (100 - t) / 100 + 4}"
+                  text-anchor="end"
+                  th:text="${t + '%'}">0%</text>
+          </th:block>
+        </g>
+        <!-- X axis: one tick per slot (1..slots), labelled with week-start dates where data exists -->
+        <g>
+          <line class="trend-axis"
+                th:x1="${padL}" th:x2="${chartW - padR}"
+                th:y1="${chartH - padB}" th:y2="${chartH - padB}" />
+          <th:block th:each="xt, it : ${xTicks}">
+            <line class="trend-axis-faint"
+                  th:x1="${xt[0]}" th:x2="${xt[0]}"
+                  th:y1="${padT}" th:y2="${chartH - padB}" />
+            <text class="trend-tick"
+                  th:x="${xt[0]}"
+                  th:y="${chartH - padB + 14}"
+                  text-anchor="middle"
+                  th:text="${xt[1]}">1</text>
+            <text class="trend-tick"
+                  th:if="${!#strings.isEmpty(xLabels[it.index])}"
+                  th:x="${xt[0]}"
+                  th:y="${chartH - padB + 28}"
+                  text-anchor="middle"
+                  style="font-size:9px;"
+                  th:text="${#strings.substring(xLabels[it.index], 5)}">date</text>
+          </th:block>
+          <text class="trend-tick"
+                th:x="${(padL + chartW - padR) / 2}"
+                th:y="${chartH - 4}"
+                text-anchor="middle"
+                fill="#6b7280">Week #</text>
+        </g>
+        <!-- Passing-score reference -->
+        <line class="trend-pass-line"
+              th:x1="${padL}" th:x2="${chartW - padR}"
+              th:y1="${passY}" th:y2="${passY}" />
+        <text class="trend-pass-label"
+              th:x="${chartW - padR - 90}"
+              th:y="${passY - 6}"
+              th:text="${'Pass: ' + passingPct + '%'}">Pass: 65%</text>
+        <!-- Score line (with single-point stub fallback) -->
+        <polyline class="trend-line" th:if="${#lists.size(markers) > 1}" th:attr="points=${polyPoints}" />
+        <line class="trend-line"
+              th:if="${#lists.size(markers) == 1}"
+              th:x1="${markers[0][0] - 18}" th:x2="${markers[0][0] + 18}"
+              th:y1="${markers[0][1]}"      th:y2="${markers[0][1]}" />
+        <!-- Per-week markers -->
+        <g>
+          <circle th:each="m : ${markers}"
+                  th:cx="${m[0]}" th:cy="${m[1]}" r="4"
+                  class="trend-mark"
+                  th:classappend="${m[3] == 1} ? 'trend-mark-pass' : 'trend-mark-fail'">
+            <title th:text="|Week avg ${m[2]}% (${m[4]} attempt(s), pass-rate ${m[5]}%, ${m[6]} user(s))|">0%</title>
+          </circle>
+        </g>
+      </svg>
+
+      <h2>Weekly breakdown</h2>
+      <table class="admin-table">
+        <thead><tr><th>Week starting</th><th>Attempts</th><th>Distinct users</th><th>Avg score</th><th>Pass rate</th></tr></thead>
+        <tbody>
+          <tr th:each="w : ${weeks}">
+            <td th:text="${w.weekStart}">2026-05-18</td>
+            <td th:text="${w.attempts}">0</td>
+            <td th:text="${w.distinctUsers}">0</td>
+            <td>
+              <span class="pct-pill"
+                    th:classappend="${w.avgScorePercent >= passingPct} ? 'good' : (${w.avgScorePercent >= passingPct - 10} ? 'mid' : 'bad')"
+                    th:text="${w.avgScorePercent + '%'}">0%</span>
+            </td>
+            <td th:text="${w.passRatePercent + '%'}">0%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>
