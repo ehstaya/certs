@@ -114,3 +114,114 @@
     position: static;
   }
 }
+
+/* ============================================================
+   Reports color polish (additive — keeps existing layout intact)
+
+   Goal: lift the all-white look without going chromatic. Adds a
+   subtle slate page background, soft shadows on the tree + content
+   panels, a brand-blue accent under each report's H1, tinted table
+   headers, and lightly-tinted dashboard cards with a thin brand-blue
+   top stripe. Uses :has() to scope the body tint to pages that
+   actually include this stylesheet (i.e. /admin/reports/* + /my/reports/*).
+   ============================================================ */
+
+body:has(.reports-layout) {
+  background: linear-gradient(180deg, #f4f6fb 0%, #f8f9fc 240px) no-repeat;
+  background-attachment: fixed;
+}
+
+.reports-tree {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
+              0 4px 12px rgba(15, 23, 42, 0.04);
+}
+.reports-content {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
+              0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+.reports-content > h1 {
+  position: relative;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--gray-200, #e5e7eb);
+}
+.reports-content > h1::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 48px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-primary, #0176D3) 0%, var(--brand-accent, #00A1E0) 100%);
+  border-radius: 2px;
+}
+
+.reports-content h2 {
+  position: relative;
+  padding-left: 12px;
+}
+.reports-content h2::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px;
+  background: var(--brand-primary, #0176D3);
+  border-radius: 2px;
+  opacity: 0.7;
+}
+
+.dashboard-cards .dash-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%);
+  border-top: 3px solid var(--brand-primary, #0176D3);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
+              0 4px 10px rgba(15, 23, 42, 0.04);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.dashboard-cards .dash-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.06),
+              0 8px 18px rgba(15, 23, 42, 0.07);
+}
+/* Rotate accent colors across the four primary slots so the grid reads
+   like a multi-channel dashboard without being a parrot show. */
+.dashboard-cards .dash-card:nth-child(4n + 2) { border-top-color: #047857; }
+.dashboard-cards .dash-card:nth-child(4n + 3) { border-top-color: #d97706; }
+.dashboard-cards .dash-card:nth-child(4n + 4) { border-top-color: #6366f1; }
+.dash-card-value { color: var(--brand-navy, #032D60); }
+
+/* Tables inside the reports section get a tinted header row + soft hover. */
+.reports-content table.admin-table thead th {
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  color: var(--brand-navy, #032D60);
+  border-bottom: 1px solid var(--gray-200, #e5e7eb);
+}
+.reports-content table.admin-table tbody tr {
+  transition: background 0.1s ease;
+}
+.reports-content table.admin-table tbody tr:hover {
+  background: rgba(234, 245, 254, 0.45);
+}
+
+/* Generic pct-pill polish for the reports area — subtle gradients, never
+   garish. Override the flat solid backgrounds only when inside reports. */
+.reports-content .pct-pill {
+  border: 1px solid transparent;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.reports-content .pct-pill.good {
+  background: linear-gradient(180deg, #d1fae5 0%, #bbf7d0 100%);
+  border-color: #86efac;
+  color: #065f46;
+}
+.reports-content .pct-pill.mid {
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  border-color: #fcd34d;
+  color: #92400e;
+}
+.reports-content .pct-pill.bad {
+  background: linear-gradient(180deg, #fee2e2 0%, #fecaca 100%);
+  border-color: #fca5a5;
+  color: #991b1b;
+}

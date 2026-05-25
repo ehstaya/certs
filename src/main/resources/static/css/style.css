@@ -1313,3 +1313,79 @@ button.results-stat:focus-visible {
   font-weight: 500;
 }
 .admin-table details summary:hover { color: var(--brand-primary-dark); }
+
+/* ============================================================
+   Admin-page color polish (additive — keeps existing layout intact)
+
+   Scope is `body:has(.admin-wrap)` so the warmer page background only
+   shows on User Administration, not the quiz pages or login. Each
+   .admin-section becomes a soft white card on the tinted background,
+   the H2 gets a brand-blue left mark to match the reports section,
+   tables share the same tinted header gradient, and the
+   issued-credentials card gets a stronger surface so it draws the
+   eye when a temp password is being shared.
+   ============================================================ */
+
+body:has(.admin-wrap) {
+  background: linear-gradient(180deg, #f4f6fb 0%, #f8f9fc 280px) no-repeat;
+  background-attachment: fixed;
+}
+
+.admin-wrap h1 {
+  position: relative;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  color: var(--brand-navy);
+}
+.admin-wrap h1::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 56px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-primary) 0%, var(--brand-accent) 100%);
+  border-radius: 2px;
+}
+
+.admin-section {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  padding: 18px 22px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
+              0 4px 12px rgba(15, 23, 42, 0.04);
+}
+.admin-section h2 {
+  position: relative;
+  padding-left: 12px;
+  color: var(--brand-navy);
+}
+.admin-section h2::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 3px; bottom: 3px;
+  width: 3px;
+  background: var(--brand-primary);
+  border-radius: 2px;
+  opacity: 0.8;
+}
+
+/* Tinted table header on the admin page — same gradient the reports
+   section uses so the two surfaces feel like a single product. */
+.admin-wrap .admin-table thead th {
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  color: var(--brand-navy);
+}
+.admin-wrap .admin-table tbody tr {
+  transition: background 0.1s ease;
+}
+.admin-wrap .admin-table tbody tr:hover {
+  background: rgba(234, 245, 254, 0.45);
+}
+
+.issued-card {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05),
+              0 8px 24px rgba(15, 23, 42, 0.08);
+  border-left: 3px solid var(--brand-primary);
+}
