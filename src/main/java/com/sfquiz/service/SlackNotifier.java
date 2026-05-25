@@ -45,7 +45,11 @@ public class SlackNotifier {
     private final AppSettingRepository settings;
     private final ObjectMapper json;
 
-    @Value("${app.slack.webhook-url:}")
+    /** First try the Spring property {@code app.slack.webhook-url} (also
+     *  satisfied by env var {@code APP_SLACK_WEBHOOK_URL} via relaxed
+     *  binding); fall back to the bare {@code SLACK_WEBHOOK_URL} env var
+     *  that operators typically reach for first. Either works. */
+    @Value("${app.slack.webhook-url:${SLACK_WEBHOOK_URL:}}")
     private String webhookUrl;
 
     @Value("${app.base-url:http://localhost:8095}")
