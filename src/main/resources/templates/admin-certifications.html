@@ -26,7 +26,7 @@
   <div class="topbar-actions">
     <a class="topbar-link user-link" href="/">Exams</a>
     <a class="topbar-link user-link" href="/my/reports">My reports</a>
-    <a class="topbar-link user-link" href="/uploads">Add questions</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
     <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
     <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
     <a class="topbar-link" href="/change-password">Change password</a>
@@ -65,7 +65,7 @@
 
   <section class="admin-section">
     <h2>Add a new certification</h2>
-    <p class="muted">Fill in the cert's basic metadata. Optionally paste the official topic breakdown (or drop a screenshot of the score-breakdown table) — Claude will parse it into topic + percentage rows so learners see how their score will be broken down before they take the test.</p>
+    <p class="muted">Fill in the cert's basic metadata <strong>and</strong> supply the topic breakdown — either paste the % weights or drop a screenshot of the score-breakdown table. The breakdown is required: learners see this on the pre-test info page so they know how their score will be split across topics.</p>
     <form method="post" action="/admin/certifications/new" class="new-cert-form" enctype="multipart/form-data">
       <label>
         <span>Certification name *</span>
@@ -94,15 +94,18 @@
       </label>
 
       <label style="grid-column: 1 / -1;">
-        <span>Topic breakdown — paste (one topic + percent per line)</span>
+        <span>Topic breakdown * &nbsp;<small style="font-weight:normal;">paste (one topic + percent per line)</small></span>
         <textarea name="breakdown" rows="6"
                   placeholder="Configuration and Setup: 20%&#10;Object Manager and Lightning App Builder: 20%&#10;Sales and Marketing Applications: 12%&#10;Service and Support Applications: 11%&#10;..."
                   style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:13px;"></textarea>
       </label>
       <label style="grid-column: 1 / -1;">
-        <span>…or upload a screenshot of the breakdown</span>
+        <span>…or upload a screenshot of the breakdown *</span>
         <input type="file" name="breakdownImage" accept="image/png,image/jpeg,image/gif,image/webp" />
-        <span class="muted" style="font-size:11px;margin-top:4px;">Either input is optional. If both are provided, the screenshot wins. Powered by Claude — falls back to a local regex parser when the API key isn't configured.</span>
+        <span class="muted" style="font-size:11px;margin-top:4px;">
+          <strong>One of the two breakdown inputs is required.</strong>
+          If both are provided, the screenshot wins. Powered by Claude — falls back to a local regex parser for clean pasted text.
+        </span>
       </label>
 
       <div class="cert-submit-row">

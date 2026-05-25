@@ -87,24 +87,37 @@ public class CertificationsAdminController {
                          @RequestParam(name = "breakdown", required = false) String breakdownText,
                          @RequestParam(name = "breakdownImage", required = false) MultipartFile breakdownImage,
                          RedirectAttributes flash) {
+        // Up-front check: neither input supplied. Reject before hitting the
+        // parser so we give a precise error message that points at the form.
+        boolean haveText  = breakdownText  != null && !breakdownText.isBlank();
+        boolean haveImage = breakdownImage != null && !breakdownImage.isEmpty();
+        if (!haveText && !haveImage) {
+            throw new IllegalArgumentException(
+                    "Topic breakdown is required. Paste the per-topic % weights or upload a screenshot of the score-breakdown table.");
+        }
+
         List<TopicBreakdownParser.TopicWeight> topics = parseBreakdown(breakdownText, breakdownImage);
+
+        // Parsed but came back empty — the input was malformed or Claude
+        // declined to extract anything. Tell the operator instead of saving
+        // a topic-less cert behind their back.
+        if (topics.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Could not extract any topic + percentage pairs from the breakdown you supplied. " +
+                    "Format each row as 'Topic name: 20%' (one per line), or upload a clearer screenshot of the breakdown table.");
+        }
 
         Exam created = examService.createExam(name, slug, description,
                 questionsPerSession, durationMinutes, passingScorePercent,
                 topics);
 
+        int sum = topics.stream().mapToInt(TopicBreakdownParser.TopicWeight::weightPercent).sum();
         StringBuilder msg = new StringBuilder("Certification '")
                 .append(created.getName())
-                .append("' created.");
-        if (!topics.isEmpty()) {
-            int sum = topics.stream().mapToInt(TopicBreakdownParser.TopicWeight::weightPercent).sum();
-            msg.append(" Persisted ").append(topics.size())
-               .append(" topic(s) totalling ").append(sum).append("%.");
-            if (sum < 95 || sum > 105) {
-                msg.append(" ⚠ weights don't add up to 100 — double-check the breakdown.");
-            }
-        } else {
-            msg.append(" No topic breakdown was supplied — you can re-create with one or add topics later.");
+                .append("' created. Persisted ").append(topics.size())
+                .append(" topic(s) totalling ").append(sum).append("%.");
+        if (sum < 95 || sum > 105) {
+            msg.append(" ⚠ weights don't add up to 100 — double-check the breakdown.");
         }
         msg.append(" Assign a domain admin below to start managing it.");
         flash.addFlashAttribute("certMessage", msg.toString());
