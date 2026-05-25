@@ -160,15 +160,25 @@ Tip: If you have trouble signing in on Chrome (saved passwords auto-fill or bloc
           <td th:text="${u.approvedAt != null ? #temporals.format(u.approvedAt, 'yyyy-MM-dd HH:mm') : '—'}">—</td>
           <td th:text="${u.mustChangePassword} ? 'Yes' : 'No'">No</td>
           <td class="actions-col">
+            <!-- For existing domain admins, a prominent button to manage which
+                 certs they govern — opens the focused per-user assignment page. -->
+            <a class="btn btn-primary btn-sm" th:if="${u.role.name() == 'ADMIN'}"
+               sec:authorize="hasRole('SUPERADMIN')"
+               th:href="@{|/admin/users/${u.id}/assignments|}"
+               th:title="|Currently manages ${assignmentCounts[u.id] != null ? assignmentCounts[u.id] : 0} cert(s)|">
+              Manage certs
+              <span class="muted" style="color:rgba(255,255,255,0.7); font-weight:400;"
+                    th:text="|(${assignmentCounts[u.id] != null ? assignmentCounts[u.id] : 0})|">(0)</span>
+            </a>
             <!-- Role transitions — superadmins only. Domain admins (ADMIN) can
                  see the page but can't change other users' roles. -->
             <form method="post" th:action="@{|/admin/users/${u.id}/promote|}" style="display:inline"
                   sec:authorize="hasRole('SUPERADMIN')"
                   th:if="${u.role.name() != 'ADMIN' and u.role.name() != 'SUPERADMIN'}">
               <button class="btn btn-primary btn-sm" type="submit"
-                      title="Grant domain-admin access (assign exams below)."
+                      title="Grant domain-admin access — you can assign certs immediately after on the Manage certs button."
                       data-confirm-title="Promote to domain admin"
-                      data-confirm="Promote this user to a domain admin? Until you tick at least one exam in the Domain admin assignments section below, they will be able to sign in but won't be able to approve / reject any questions."
+                      data-confirm="Promote this user to a domain admin? They will land in the user list with the role ADMIN. Click 'Manage certs' next to their row to tick which certifications they should govern — until you assign at least one, they will be able to sign in but won't be able to approve / reject any questions."
                       data-confirm-ok="Promote">
                 Promote to domain admin
               </button>

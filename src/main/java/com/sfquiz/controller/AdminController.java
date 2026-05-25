@@ -73,10 +73,34 @@ public class AdminController {
         model.addAttribute("rejected",all.stream().filter(u -> u.getStatus() == UserStatus.REJECTED).toList());
         model.addAttribute("disabled",all.stream().filter(u -> u.getStatus() == UserStatus.DISABLED).toList());
 
-        // The matrix view of domain-admin assignments has been moved to
-        // /admin/certifications, alongside the certification list. The
-        // user page now focuses purely on user-lifecycle management.
+        // Per-ADMIN-user assignment count so the user table can show
+        // "manages N cert(s)" next to the Manage certs button.
+        java.util.Map<Long, Integer> assignmentCounts = new java.util.HashMap<>();
+        for (User u : active) {
+            if (u.getRole() == UserRole.ADMIN) {
+                assignmentCounts.put(u.getId(), domainAdmins.examSlugsFor(u).size());
+            }
+        }
+        model.addAttribute("assignmentCounts", assignmentCounts);
+
         return "admin-users";
+    }
+
+    /** Per-user assignment page — a focused screen showing a single ADMIN
+     *  with checkboxes for every active certification. Saving posts to the
+     *  existing /users/{id}/domain-assignments endpoint. This is the page
+     *  super admins reach via the "Manage certs" button on each ADMIN row
+     *  of the user table (the cross-cert matrix on /admin/certifications
+     *  is kept as a complementary "all admins at once" view). */
+    @GetMapping("/users/{id}/assignments")
+    public String userAssignments(@PathVariable Long id, Model model) {
+        User u = users.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        model.addAttribute("user", u);
+        model.addAttribute("activeExams", examService.listActive());
+        model.addAttribute("assignedSlugs",
+                new java.util.HashSet<>(domainAdmins.examSlugsFor(u)));
+        return "admin-user-assignments";
     }
 
     /** Manually fire a Slack digest message. SUPERADMIN-only via the

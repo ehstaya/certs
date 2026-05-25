@@ -69,6 +69,19 @@ public class ExamService {
     public Exam createExam(String name, String slug, String description,
                            int questionsPerSession, int durationMinutes,
                            int passingScorePercent) {
+        return createExam(name, slug, description,
+                questionsPerSession, durationMinutes, passingScorePercent,
+                java.util.List.of());
+    }
+
+    /** Create a new cert AND seed its topic breakdown in one transaction.
+     *  Empty/null {@code topics} just creates the cert without weights
+     *  (matches the basic flow). Duplicate-slug check stays at the front
+     *  so we never leave a half-built exam if the validation fires. */
+    public Exam createExam(String name, String slug, String description,
+                           int questionsPerSession, int durationMinutes,
+                           int passingScorePercent,
+                           List<TopicBreakdownParser.TopicWeight> topics) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Certification name is required.");
         }
@@ -89,7 +102,28 @@ public class ExamService {
         e.setPassingScorePercent(clamp(passingScorePercent, 1, 100, 65));
         e.setActive(true);
         e.setSortOrder(100);
-        return exams.save(e);
+        Exam saved = exams.save(e);
+
+        // Topic breakdown — drop the parsed rows in alongside the new cert.
+        // De-dupe on topicKey within the same exam so two near-identical
+        // names ("User Setup" / "User Setup ") don't blow the unique index.
+        if (topics != null && !topics.isEmpty()) {
+            java.util.Set<String> seenKeys = new java.util.HashSet<>();
+            int order = 10;
+            for (TopicBreakdownParser.TopicWeight t : topics) {
+                if (t == null || t.topicKey() == null || t.topicKey().isBlank()) continue;
+                if (!seenKeys.add(t.topicKey())) continue;
+                ExamTopic et = new ExamTopic();
+                et.setExam(saved);
+                et.setTopicKey(t.topicKey());
+                et.setName(t.name());
+                et.setWeightPercent(t.weightPercent());
+                et.setSortOrder(order);
+                order += 10;
+                examTopics.save(et);
+            }
+        }
+        return saved;
     }
 
     /** All exams (active and otherwise) for the management list. */

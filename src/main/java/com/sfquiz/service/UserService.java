@@ -64,6 +64,11 @@ public class UserService {
         return users.findByEmailIgnoreCase(email);
     }
 
+    public Optional<User> findById(Long id) {
+        if (id == null) return Optional.empty();
+        return users.findById(id);
+    }
+
     public List<User> listPending() {
         return users.findByStatusOrderByCreatedAtAsc(UserStatus.PENDING);
     }

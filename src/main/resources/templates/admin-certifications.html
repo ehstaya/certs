@@ -65,8 +65,8 @@
 
   <section class="admin-section">
     <h2>Add a new certification</h2>
-    <p class="muted">Basic metadata only — name, slug, duration, passing score. Topic breakdown (and Claude-parsed score breakdown from a screenshot or pasted text) lands as a follow-up. Once created, the cert appears in the assignment matrix below so you can immediately assign a domain admin.</p>
-    <form method="post" action="/admin/certifications/new" class="new-cert-form">
+    <p class="muted">Fill in the cert's basic metadata. Optionally paste the official topic breakdown (or drop a screenshot of the score-breakdown table) — Claude will parse it into topic + percentage rows so learners see how their score will be broken down before they take the test.</p>
+    <form method="post" action="/admin/certifications/new" class="new-cert-form" enctype="multipart/form-data">
       <label>
         <span>Certification name *</span>
         <input type="text" name="name" required placeholder="e.g. Salesforce Marketing Cloud Admin" autocomplete="off" />
@@ -92,6 +92,19 @@
         <span>Passing score (%)</span>
         <input type="number" name="passingScorePercent" value="65" min="1" max="100" />
       </label>
+
+      <label style="grid-column: 1 / -1;">
+        <span>Topic breakdown — paste (one topic + percent per line)</span>
+        <textarea name="breakdown" rows="6"
+                  placeholder="Configuration and Setup: 20%&#10;Object Manager and Lightning App Builder: 20%&#10;Sales and Marketing Applications: 12%&#10;Service and Support Applications: 11%&#10;..."
+                  style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:13px;"></textarea>
+      </label>
+      <label style="grid-column: 1 / -1;">
+        <span>…or upload a screenshot of the breakdown</span>
+        <input type="file" name="breakdownImage" accept="image/png,image/jpeg,image/gif,image/webp" />
+        <span class="muted" style="font-size:11px;margin-top:4px;">Either input is optional. If both are provided, the screenshot wins. Powered by Claude — falls back to a local regex parser when the API key isn't configured.</span>
+      </label>
+
       <div class="cert-submit-row">
         <button class="btn btn-primary" type="submit">Create certification</button>
         <span class="muted">Adds the cert as ACTIVE so it shows on the exam picker right away.</span>
