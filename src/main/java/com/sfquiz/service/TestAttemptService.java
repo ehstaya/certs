@@ -184,19 +184,27 @@ public class TestAttemptService {
             int scorePercent,
             boolean passed,
             java.time.Instant finishedAt,
-            List<AttemptAnswerDetail> items
+            List<AttemptAnswerDetail> items,
+            // Pagination metadata for the detail page.
+            int page,           // current page (1-based for the URL)
+            int pageSize,       // page size
+            int totalItems,     // total matching the filter (across all pages)
+            int totalPages      // total pages, min 1
     ) {}
 
     /** Fetch the per-question detail for an attempt owned by {@code userEmail}.
-     *  {@code filter} selects "correct", "incorrect", or "all". Throws if the
-     *  attempt doesn't belong to the caller — keeps users from peeking at
-     *  each other's results by guessing ids.
+     *  {@code filter} selects "correct", "incorrect", or "all". {@code page}
+     *  is 1-based; {@code pageSize} is clamped to a sane range so a hostile
+     *  client can't request the whole bank in one go. Throws if the attempt
+     *  doesn't belong to the caller — keeps users from peeking at each
+     *  other's results by guessing ids.
      *
      *  Read-only @Transactional so the lazy {@code TestAttempt.user} proxy
      *  stays initializable for the duration of the ownership check + the
      *  per-answer Question/Choice walks the template later does. */
     @Transactional(readOnly = true)
-    public AttemptDetailView attemptDetail(String userEmail, Long attemptId, String filter) {
+    public AttemptDetailView attemptDetail(String userEmail, Long attemptId,
+                                           String filter, int page, int pageSize) {
         TestAttempt a = attempts.findById(attemptId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown attempt id"));
         if (a.getUser() == null || !a.getUser().getEmail().equalsIgnoreCase(userEmail)) {
@@ -209,13 +217,28 @@ public class TestAttemptService {
         if ("correct".equalsIgnoreCase(filter))   { wantCorrect = true;  wantIncorrect = false; }
         if ("incorrect".equalsIgnoreCase(filter)) { wantCorrect = false; wantIncorrect = true;  }
 
+        // Clamp pagination — defends against ?pageSize=99999 and ?page=-1.
+        if (pageSize <= 0)  pageSize = 10;
+        if (pageSize > 100) pageSize = 100;
+        if (page < 1)       page = 1;
+
         List<TestAttemptAnswer> rows = answerRepo.findByAttemptOrderByIdAsc(a);
-        List<AttemptAnswerDetail> items = new ArrayList<>();
-        int n = 0;
+        List<TestAttemptAnswer> matching = new ArrayList<>();
         for (TestAttemptAnswer r : rows) {
             if (r.isCorrect() && !wantCorrect) continue;
             if (!r.isCorrect() && !wantIncorrect) continue;
+            matching.add(r);
+        }
 
+        int totalItems = matching.size();
+        int totalPages = Math.max(1, (totalItems + pageSize - 1) / pageSize);
+        if (page > totalPages) page = totalPages;
+        int fromIdx = (page - 1) * pageSize;
+        int toIdx = Math.min(fromIdx + pageSize, totalItems);
+
+        List<AttemptAnswerDetail> items = new ArrayList<>();
+        for (int i = fromIdx; i < toIdx; i++) {
+            TestAttemptAnswer r = matching.get(i);
             Question q = r.getQuestion();
             java.util.Set<Long> pickedIds = parseIds(r.getSelectedChoiceIds());
             List<ChoiceView> userPicks = new ArrayList<>();
@@ -224,9 +247,12 @@ public class TestAttemptService {
                 if (pickedIds.contains(c.getId())) userPicks.add(new ChoiceView(c.getLabel(), c.getText()));
                 if (c.isCorrect()) correctPicks.add(new ChoiceView(c.getLabel(), c.getText()));
             }
+            // questionNumber is the 1-based index *across the filtered set*,
+            // not the page slice — so "Question 27 of 50" makes sense even
+            // when you're paging through results.
             items.add(new AttemptAnswerDetail(
                     q.getId(),
-                    ++n,
+                    i + 1,
                     q.getText(),
                     q.getType() == null ? "SINGLE" : q.getType().name(),
                     q.getExplanation(),
@@ -242,7 +268,8 @@ public class TestAttemptService {
                 a.getTotalQuestions(), a.getCorrectCount(),
                 a.getIncorrectCount(), a.getUnansweredCount(),
                 a.getScorePercent(), a.isPassed(),
-                a.getFinishedAt(), items);
+                a.getFinishedAt(), items,
+                page, pageSize, totalItems, totalPages);
     }
 
     private static java.util.Set<Long> parseIds(String csv) {

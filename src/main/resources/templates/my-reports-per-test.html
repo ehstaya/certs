@@ -110,7 +110,7 @@
           <td th:text="${a.scorePercent + '%'}">0%</td>
           <td>
             <a th:if="${a.correctCount > 0}"
-               th:href="@{|/my/reports/attempts/${a.id}|(filter='correct')}"
+               th:href="@{|/my/reports/attempts/${a.id}?filter=correct|}"
                class="pct-pill good"
                style="text-decoration:none;cursor:pointer;"
                th:text="${a.correctCount}">0</a>
@@ -118,7 +118,7 @@
           </td>
           <td>
             <a th:if="${a.incorrectCount > 0}"
-               th:href="@{|/my/reports/attempts/${a.id}|(filter='incorrect')}"
+               th:href="@{|/my/reports/attempts/${a.id}?filter=incorrect|}"
                class="pct-pill bad"
                style="text-decoration:none;cursor:pointer;"
                th:text="${a.incorrectCount}">0</a>

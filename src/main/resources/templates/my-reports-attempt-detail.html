@@ -60,6 +60,26 @@
     }
     .qa-explanation .label { font-weight: 700; color: var(--gray-900, #111827); display: block; margin-bottom: 4px; }
     .qa-help-link { display: inline-block; margin-top: 8px; font-size: 12px; }
+
+    /* Pager controls — top + bottom flank the question cards so users
+       don't have to scroll back up after a page of long explanations. */
+    .qa-pager {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      margin: 14px 0;
+      background: #fff;
+      border: 1px solid var(--gray-200, #e5e7eb);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--gray-700, #374151);
+    }
+    .qa-pager strong { color: var(--brand-navy, #032D60); font-variant-numeric: tabular-nums; }
+    .qa-pager-links { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .qa-pager-numbers { color: var(--gray-500, #6b7280); font-size: 12px; }
   </style>
 </head>
 <body>
@@ -102,7 +122,7 @@
   </aside>
 
   <main class="reports-content">
-    <a class="btn btn-sm detail-back" th:href="@{|/my/reports/per-test|(exam=${detail.examSlug})}">‹ Back to attempts</a>
+    <a class="btn btn-sm detail-back" th:href="@{|/my/reports/per-test?exam=${detail.examSlug}|}">‹ Back to attempts</a>
 
     <h1>
       <span th:if="${filter == 'correct'}">Your correct answers</span>
@@ -146,13 +166,13 @@
     </section>
 
     <div class="filter-tabs">
-      <a th:href="@{|/my/reports/attempts/${detail.attemptId}|(filter='all')}"
+      <a th:href="@{|/my/reports/attempts/${detail.attemptId}?filter=all|}"
          class="filter-tab all"
          th:classappend="${filter == 'all'} ? 'active' : ''">All</a>
-      <a th:href="@{|/my/reports/attempts/${detail.attemptId}|(filter='correct')}"
+      <a th:href="@{|/my/reports/attempts/${detail.attemptId}?filter=correct|}"
          class="filter-tab correct"
          th:classappend="${filter == 'correct'} ? 'active' : ''">Correct only</a>
-      <a th:href="@{|/my/reports/attempts/${detail.attemptId}|(filter='incorrect')}"
+      <a th:href="@{|/my/reports/attempts/${detail.attemptId}?filter=incorrect|}"
          class="filter-tab incorrect"
          th:classappend="${filter == 'incorrect'} ? 'active' : ''">Incorrect only</a>
     </div>
@@ -163,11 +183,34 @@
       <span th:if="${filter == 'all'}">No answered questions on this attempt.</span>
     </div>
 
+    <!-- Pagination summary + top pager. Mirrored below the cards. -->
+    <div class="qa-pager" th:if="${detail.totalItems > 0}">
+      <span class="qa-pager-info">
+        Showing <strong th:text="${((detail.page - 1) * detail.pageSize) + 1}">1</strong>–<strong
+          th:text="${((detail.page - 1) * detail.pageSize) + #lists.size(detail.items)}">10</strong>
+        of <strong th:text="${detail.totalItems}">0</strong>
+        <span th:if="${filter == 'correct'}">correct</span>
+        <span th:if="${filter == 'incorrect'}">incorrect</span>
+        answer<span th:if="${detail.totalItems != 1}">s</span>
+      </span>
+      <span class="qa-pager-links" th:if="${detail.totalPages > 1}">
+        <a th:if="${detail.page > 1}"
+           th:href="@{|/my/reports/attempts/${detail.attemptId}?filter=${filter}&page=${detail.page - 1}|}"
+           class="btn btn-sm">‹ Prev</a>
+        <span class="qa-pager-numbers">
+          Page <strong th:text="${detail.page}">1</strong> of <strong th:text="${detail.totalPages}">1</strong>
+        </span>
+        <a th:if="${detail.page < detail.totalPages}"
+           th:href="@{|/my/reports/attempts/${detail.attemptId}?filter=${filter}&page=${detail.page + 1}|}"
+           class="btn btn-sm">Next ›</a>
+      </span>
+    </div>
+
     <article th:each="item, it : ${detail.items}"
              class="qa-card"
              th:classappend="${item.correct} ? 'correct' : 'incorrect'">
       <header class="qa-head">
-        <span class="muted">Question <span th:text="${it.index + 1}">1</span></span>
+        <span class="muted">Question <span th:text="${item.questionNumber}">1</span></span>
         <span class="pill"
               th:classappend="${item.correct} ? 'correct' : 'incorrect'"
               th:text="${item.correct} ? 'Correct' : 'Incorrect'">—</span>
@@ -204,6 +247,22 @@
            class="qa-help-link">Reference →</a>
       </div>
     </article>
+
+    <!-- Bottom pager — same controls as the top so users don't have to scroll
+         back up after reading a page of cards. -->
+    <div class="qa-pager" th:if="${detail.totalPages > 1}">
+      <span class="qa-pager-info">
+        Page <strong th:text="${detail.page}">1</strong> of <strong th:text="${detail.totalPages}">1</strong>
+      </span>
+      <span class="qa-pager-links">
+        <a th:if="${detail.page > 1}"
+           th:href="@{|/my/reports/attempts/${detail.attemptId}?filter=${filter}&page=${detail.page - 1}|}"
+           class="btn btn-sm">‹ Prev</a>
+        <a th:if="${detail.page < detail.totalPages}"
+           th:href="@{|/my/reports/attempts/${detail.attemptId}?filter=${filter}&page=${detail.page + 1}|}"
+           class="btn btn-sm">Next ›</a>
+      </span>
+    </div>
   </main>
 </div>
 </body>

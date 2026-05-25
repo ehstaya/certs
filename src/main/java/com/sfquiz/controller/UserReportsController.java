@@ -181,9 +181,12 @@ public class UserReportsController {
     public String attemptDetail(Authentication auth,
                                 @PathVariable Long id,
                                 @RequestParam(name = "filter", defaultValue = "all") String filter,
+                                @RequestParam(name = "page", defaultValue = "1") int page,
+                                @RequestParam(name = "size", defaultValue = "10") int size,
                                 Model model) {
         String email = currentEmail(auth);
-        TestAttemptService.AttemptDetailView detail = attempts.attemptDetail(email, id, filter);
+        TestAttemptService.AttemptDetailView detail =
+                attempts.attemptDetail(email, id, filter, page, size);
         model.addAttribute("detail", detail);
         // Normalize the filter for the template — only correct/incorrect get
         // a focused title; anything else falls back to "all".
