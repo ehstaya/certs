@@ -115,8 +115,41 @@
       if (role === "ADMIN" || role === "SUPERADMIN") {
         document.querySelectorAll(".admin-only").forEach(el => { el.style.display = ""; });
       }
+      // Detect a server restart by comparing the bootId returned now against
+      // the one we stored on the previous load. Mismatch ⇒ any persisted
+      // timer state in localStorage is from a previous server lifetime and
+      // should be wiped so the user starts fresh.
+      handleBootIdChange(data.bootId);
     } catch (e) {
       // ignore — server may be down; user header just stays blank
+    }
+  }
+
+  /** Server-restart detection. On every page load we compare the server's
+   *  in-memory bootId against the last one we stored in localStorage. If
+   *  they differ, any persisted timer state (sfquiz:timer:*) belongs to a
+   *  previous server lifetime — wipe it so the user gets a fresh timer
+   *  instead of resuming a stale countdown. Then store the new bootId. */
+  const BOOT_ID_KEY = "sfquiz:server-boot-id";
+  const TIMER_KEY_PREFIX = "sfquiz:timer:";
+  function handleBootIdChange(bootId) {
+    if (bootId == null) return;
+    const stored = localStorage.getItem(BOOT_ID_KEY);
+    const incoming = String(bootId);
+    if (stored !== incoming) {
+      let wiped = 0;
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(TIMER_KEY_PREFIX)) {
+          localStorage.removeItem(key);
+          wiped++;
+        }
+      }
+      localStorage.setItem(BOOT_ID_KEY, incoming);
+      if (wiped > 0) {
+        // Helpful breadcrumb in DevTools — quiet during normal navigation.
+        try { console.info("Server restart detected — wiped " + wiped + " stale timer entrie(s)."); } catch (e) {}
+      }
     }
   }
 
