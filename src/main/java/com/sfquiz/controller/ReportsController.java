@@ -2,17 +2,22 @@ package com.sfquiz.controller;
 
 import com.sfquiz.dto.ExamDto;
 import com.sfquiz.entity.Question;
+import com.sfquiz.entity.User;
 import com.sfquiz.entity.UserRole;
 import com.sfquiz.repository.QuestionRepository;
 import com.sfquiz.repository.QuestionVoteRepository;
 import com.sfquiz.repository.TestAttemptRepository;
+import com.sfquiz.service.AuthorizationService;
 import com.sfquiz.service.ExamService;
 import com.sfquiz.service.VoteService;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+
+import java.util.Set;
 
 import com.sfquiz.entity.TestAttempt;
 
@@ -39,17 +44,49 @@ public class ReportsController {
     private final QuestionRepository questions;
     private final QuestionVoteRepository votes;
     private final TestAttemptRepository attempts;
+    private final AuthorizationService authz;
 
     public ReportsController(VoteService voteService,
                              ExamService examService,
                              QuestionRepository questions,
                              QuestionVoteRepository votes,
-                             TestAttemptRepository attempts) {
+                             TestAttemptRepository attempts,
+                             AuthorizationService authz) {
         this.voteService = voteService;
         this.examService = examService;
         this.questions = questions;
         this.votes = votes;
         this.attempts = attempts;
+        this.authz = authz;
+    }
+
+    /** Returns the exams the calling user is allowed to see in the reports
+     *  section. SUPERADMIN sees every active exam; domain admins see only
+     *  the certs they govern. Empty result means "no access" — the caller
+     *  will see empty cards / empty tables, never another user's data. */
+    private List<ExamDto> examsVisibleTo(Authentication auth) {
+        User u = authz.currentUser(auth).orElse(null);
+        Set<String> managed = authz.managedExamSlugs(u);
+        List<ExamDto> all = examService.listActive();
+        if (AuthorizationService.managesAllExams(managed)) return all;
+        return all.stream().filter(e -> managed.contains(e.slug())).toList();
+    }
+
+    /** True if the caller is a domain admin (ADMIN role, not SUPERADMIN).
+     *  Used to swap the report title/intro for scoped views. */
+    private boolean isDomainAdmin(Authentication auth) {
+        return authz.currentUser(auth)
+                .map(u -> u.getRole() == UserRole.ADMIN)
+                .orElse(false);
+    }
+
+    /** Count questions with a given status, scoped to a slug set. Empty
+     *  slug set means "no access" → 0. Used by the dashboard cards. */
+    private long countByStatusScoped(Question.Status status, Set<String> slugs) {
+        if (slugs == null || slugs.isEmpty()) return 0;
+        return questions.findByStatusOrderByNumber(status).stream()
+                .filter(q -> q.getExam() != null && slugs.contains(q.getExam().getSlug()))
+                .count();
     }
 
     public record DashboardStats(
@@ -64,27 +101,36 @@ public class ReportsController {
     ) {}
 
     /** Default landing for the reports section — high-level dashboard with
-     *  cross-platform stats + quick links into the detail reports. */
+     *  cross-platform stats + quick links into the detail reports.
+     *  Domain admins see the same shape of dashboard scoped to the cert(s)
+     *  they govern; super admins see every active exam. */
     @GetMapping
-    public String dashboard(Model model) {
-        List<ExamDto> exams = examService.listActive();
+    public String dashboard(Authentication auth, Model model) {
+        List<ExamDto> exams = examsVisibleTo(auth);
+        // Question counts are by-status, scoped to the caller's exam slugs
+        // for domain admins so the "Pending review" card never surfaces
+        // questions on someone else's cert.
+        java.util.Set<String> slugSet = exams.stream().map(ExamDto::slug)
+                .collect(java.util.stream.Collectors.toSet());
         long active = exams.size();
-        long approved = questions.countByStatus(Question.Status.APPROVED);
-        long pending  = questions.countByStatus(Question.Status.PENDING);
-        long retired  = questions.countByStatus(Question.Status.RETIRED);
-        long totalVotes = votes.count();
+        long approved = countByStatusScoped(Question.Status.APPROVED, slugSet);
+        long pending  = countByStatusScoped(Question.Status.PENDING,  slugSet);
+        long retired  = countByStatusScoped(Question.Status.RETIRED,  slugSet);
 
-        // Aggregate vote totals across the whole bank.
-        long up = 0, down = 0;
+        // Per-exam vote totals. For domain admins we only sum their certs.
+        long up = 0, down = 0, totalVotes = 0;
         List<VoteService.ExamQualityReport> perExam = new ArrayList<>();
         for (ExamDto e : exams) {
             VoteService.ExamQualityReport r = voteService.buildReport(e.slug());
             perExam.add(r);
             up += r.up();
             down += r.down();
+            totalVotes += r.totalVotes();
         }
         int pct = (up + down) > 0 ? (int) Math.round(100.0 * up / (up + down)) : 0;
         perExam.sort((a, b) -> Integer.compare(b.approxPercentUp(), a.approxPercentUp()));
+
+        model.addAttribute("scopedToCerts", isDomainAdmin(auth));
 
         model.addAttribute("stats", new DashboardStats(
                 active, approved, pending, retired, totalVotes, up, down, pct));
@@ -105,14 +151,30 @@ public class ReportsController {
 
     /** Verifier-feedback report. Lists every vote with a reason; admin can
      *  retire a question or send it back to the review queue from each row.
-     *  Supports filtering by exam, voter (verifier), and reason text. */
+     *  Supports filtering by exam, voter (verifier), and reason text.
+     *  Domain admins see only their cert(s); super admins see everything. */
     @GetMapping("/verifier-feedback")
     public String verifierFeedback(@RequestParam(name = "exam", required = false) String exam,
                                    @RequestParam(name = "voter", required = false) String voter,
                                    @RequestParam(name = "reason", required = false) String reason,
+                                   Authentication auth,
                                    Model model) {
-        List<ExamDto> exams = examService.listActive();
+        List<ExamDto> exams = examsVisibleTo(auth);
+        java.util.Set<String> visible = exams.stream().map(ExamDto::slug)
+                .collect(java.util.stream.Collectors.toSet());
+        // If the caller pinned a specific exam that isn't in their visible
+        // set, drop the filter — they shouldn't see the data either way.
+        if (exam != null && !exam.isBlank() && !visible.contains(exam)) {
+            exam = null;
+        }
         List<VoteService.VerifierFeedbackEntry> rows = voteService.verifierFeedback(exam);
+        // For domain admins, further filter rows to their cert set even when
+        // no exam filter is supplied (they shouldn't see other certs' rows).
+        if (isDomainAdmin(auth)) {
+            rows = rows.stream()
+                    .filter(r -> r.examSlug() != null && visible.contains(r.examSlug()))
+                    .toList();
+        }
 
         // Dropdown sources are built from ALL reasoned votes (regardless of
         // the current filters) so admins can still pivot to a different voter
@@ -181,8 +243,11 @@ public class ReportsController {
     @GetMapping("/scores")
     public String userScores(@RequestParam(name = "role", required = false) String role,
                              @RequestParam(name = "exam", required = false) String exam,
+                             Authentication auth,
                              Model model) {
-        List<ExamDto> exams = examService.listActive();
+        List<ExamDto> exams = examsVisibleTo(auth);
+        java.util.Set<String> visibleSlugs = exams.stream().map(ExamDto::slug)
+                .collect(java.util.stream.Collectors.toSet());
 
         UserRole roleFilter = null;
         if (role != null && !role.isBlank()) {
@@ -190,11 +255,15 @@ public class ReportsController {
             catch (IllegalArgumentException ignored) { /* leave null = "all roles" */ }
         }
         String examFilter = (exam == null || exam.isBlank()) ? null : exam.trim();
+        // If the URL pins a slug the caller can't see, drop the filter — we
+        // still let them browse their visible set below.
+        if (examFilter != null && !visibleSlugs.contains(examFilter)) examFilter = null;
 
         List<UserExamScore> rows = new ArrayList<>();
         for (Object[] r : attempts.allUserExamSummaries()) {
             UserRole rowRole = (UserRole) r[3];
             String slug = (String) r[5];
+            if (!visibleSlugs.contains(slug)) continue;   // domain-admin scope
             if (roleFilter != null && rowRole != roleFilter) continue;
             if (examFilter != null && !examFilter.equals(slug)) continue;
 
@@ -241,9 +310,12 @@ public class ReportsController {
      *  "is this exam improving or declining?" view. Aggregates all attempts
      *  for one exam into weekly buckets so admins can spot training needs. */
     @GetMapping("/cert-trend")
-    public String certTrend(@RequestParam(name = "exam", required = false) String exam, Model model) {
-        List<ExamDto> exams = examService.listActive();
-        // Default to the first active exam if none supplied (or the slug is bogus).
+    public String certTrend(@RequestParam(name = "exam", required = false) String exam,
+                            Authentication auth,
+                            Model model) {
+        List<ExamDto> exams = examsVisibleTo(auth);
+        // Default to the caller's first visible exam if none supplied (or the
+        // slug is bogus / out of scope for a domain admin).
         final String requested = exam;
         String resolved = exam;
         if (requested == null || requested.isBlank() || exams.stream().noneMatch(e -> e.slug().equals(requested))) {
@@ -354,11 +426,19 @@ public class ReportsController {
         return "cert-trend-report";
     }
 
-    /** Per-question quality (thumbs up/down) report + cross-exam leaderboard. */
+    /** Per-question quality (thumbs up/down) report + cross-exam leaderboard.
+     *  For domain admins both the per-exam dropdown and the leaderboard are
+     *  scoped to the cert(s) they govern. */
     @GetMapping("/quality")
-    public String quality(@RequestParam(name = "exam", required = false) String exam, Model model) {
-        List<ExamDto> exams = examService.listActive();
-        if (exam == null || exam.isBlank()) {
+    public String quality(@RequestParam(name = "exam", required = false) String exam,
+                          Authentication auth,
+                          Model model) {
+        List<ExamDto> exams = examsVisibleTo(auth);
+        java.util.Set<String> visible = exams.stream().map(ExamDto::slug)
+                .collect(java.util.stream.Collectors.toSet());
+        // If the URL pins an out-of-scope slug, fall back to the caller's
+        // first visible exam instead of revealing data they shouldn't see.
+        if (exam == null || exam.isBlank() || !visible.contains(exam)) {
             exam = exams.isEmpty() ? null : exams.get(0).slug();
         }
         model.addAttribute("exams", exams);

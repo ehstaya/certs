@@ -51,8 +51,12 @@ public class SecurityConfig {
                 // management are all SUPERADMIN-only — domain admins can
                 // only manage questions on the exam(s) they govern.
                 .requestMatchers("/admin/users/**").hasRole("SUPERADMIN")
-                .requestMatchers("/admin/reports/**").hasRole("SUPERADMIN")
                 .requestMatchers("/admin/certifications/**").hasRole("SUPERADMIN")
+                // Reports are open to BOTH ADMIN and SUPERADMIN. Domain admins
+                // see results auto-scoped to the cert(s) they govern
+                // (enforced server-side by AuthorizationService inside each
+                // ReportsController handler). Super admins see everything.
+                .requestMatchers("/admin/reports/**").hasAnyRole("ADMIN", "SUPERADMIN")
                 // The /admin landing itself is the super-admin dashboard.
                 // Domain admins land on /admin/questions directly via the
                 // top nav and never see /admin.
