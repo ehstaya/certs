@@ -6,6 +6,7 @@ import com.sfquiz.entity.UserRole;
 import com.sfquiz.entity.UserStatus;
 import com.sfquiz.service.DomainAdminService;
 import com.sfquiz.service.ExamService;
+import com.sfquiz.service.SlackNotifier;
 import com.sfquiz.service.UserService;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -31,11 +32,14 @@ public class AdminController {
     private final UserService users;
     private final DomainAdminService domainAdmins;
     private final ExamService examService;
+    private final SlackNotifier slack;
 
-    public AdminController(UserService users, DomainAdminService domainAdmins, ExamService examService) {
+    public AdminController(UserService users, DomainAdminService domainAdmins,
+                           ExamService examService, SlackNotifier slack) {
         this.users = users;
         this.domainAdmins = domainAdmins;
         this.examService = examService;
+        this.slack = slack;
     }
 
     @GetMapping
@@ -58,7 +62,34 @@ public class AdminController {
         }
         model.addAttribute("activeExams", activeExams);
         model.addAttribute("assigned", assigned);
+
+        // Slack integration status — drives the small "Slack" card on /admin
+        // so the super admin can see at a glance whether the webhook is set,
+        // when the last digest was posted, and trigger a manual test.
+        model.addAttribute("slackConfigured", slack.isConfigured());
+        model.addAttribute("slackLastPostedAt", slack.lastPostedAt());
         return "admin";
+    }
+
+    /** Manually fire a Slack digest message. SUPERADMIN-only via the
+     *  /admin/users/** path guard. Useful right after configuring the
+     *  webhook so the operator can confirm the URL works. */
+    @PostMapping("/users/slack-test")
+    public String slackTest(RedirectAttributes flash) {
+        if (!slack.isConfigured()) {
+            flash.addFlashAttribute("adminError",
+                    "Slack webhook URL is not configured. Set the SLACK_WEBHOOK_URL env var (or app.slack.webhook-url property) and restart.");
+            return "redirect:/admin";
+        }
+        boolean ok = slack.postDigestForce("manual-test from /admin");
+        if (ok) {
+            flash.addFlashAttribute("adminMessage",
+                    "Slack test message posted. Check the channel — if you don't see it, double-check the webhook URL.");
+        } else {
+            flash.addFlashAttribute("adminError",
+                    "Slack POST failed. Webhook URL likely invalid or revoked — see the server logs for details.");
+        }
+        return "redirect:/admin";
     }
 
     @PostMapping("/users/new")

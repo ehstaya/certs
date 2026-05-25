@@ -72,6 +72,34 @@
     </table>
   </section>
 
+  <!-- Slack integration status. SUPERADMIN-only. Drives the once-per-24h
+       pending-review digest posted to the configured Slack channel. -->
+  <section class="admin-section" sec:authorize="hasRole('SUPERADMIN')">
+    <h2>Slack integration</h2>
+    <div th:if="${slackConfigured}" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">
+      <span class="pct-pill good" style="font-weight:600;">✓ Webhook configured</span>
+      <span class="muted" th:if="${slackLastPostedAt != null}">
+        Last digest posted: <strong th:text="${#temporals.format(slackLastPostedAt, 'yyyy-MM-dd HH:mm z')}">—</strong>
+        (next reminder ~24h after that).
+      </span>
+      <span class="muted" th:if="${slackLastPostedAt == null}">No digest posted yet.</span>
+      <form method="post" action="/admin/users/slack-test" style="display:inline;">
+        <button class="btn btn-sm" type="submit"
+                data-confirm-title="Send Slack test message"
+                data-confirm="Post a pending-review digest to the configured Slack channel right now (bypassing the 24-hour throttle)? Use this once to confirm the webhook is wired up correctly."
+                data-confirm-ok="Send now">
+          Send test message
+        </button>
+      </form>
+    </div>
+    <div th:unless="${slackConfigured}" style="background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:4px;">
+      <strong>Not configured.</strong> Set the <code>SLACK_WEBHOOK_URL</code> environment variable to an
+      <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener">incoming-webhook URL</a>
+      for the channel that should receive review reminders, then restart the app.
+      Once configured, a scheduled job posts a digest of pending questions once every 24 hours until the queue is cleared.
+    </div>
+  </section>
+
   <section class="admin-section" sec:authorize="hasRole('SUPERADMIN')">
     <h2>Add a user manually</h2>
     <p class="muted">Create an ACTIVE account in one step. A temp password is generated and shown here once — copy &amp; share via Slack. The user must change it on first sign-in.</p>
