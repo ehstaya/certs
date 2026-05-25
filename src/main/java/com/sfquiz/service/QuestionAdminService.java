@@ -299,6 +299,99 @@ public class QuestionAdminService {
         return repo.findById(id).orElseThrow(() -> new IllegalArgumentException("Unknown question id: " + id));
     }
 
+    /** Result of a manual question create — id of the new row + the
+     *  number we assigned within the exam. */
+    public record ManualCreateResult(Long id, int number, String examSlug) {}
+
+    /** Create one PENDING question from scratch (the "compose question"
+     *  form). Mirrors {@link #update}'s field-validation logic but inserts
+     *  a fresh row instead of mutating an existing one. The new question
+     *  goes straight into the review queue — same approval flow as
+     *  scraper-imported and screenshot-extracted questions. */
+    @Transactional
+    public ManualCreateResult createManual(String examSlug,
+                                           String type,
+                                           String text,
+                                           String explanation,
+                                           String helpUrl,
+                                           List<String> choiceTexts,
+                                           List<Integer> correctIndexes,
+                                           String creatorEmail) {
+        if (examSlug == null || examSlug.isBlank()) {
+            throw new IllegalArgumentException("Please pick a certification.");
+        }
+        Exam exam = exams.findBySlug(examSlug)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown certification: " + examSlug));
+        if (text == null || text.trim().isEmpty()) {
+            throw new IllegalArgumentException("Question text is required.");
+        }
+
+        // Validate the choice set up-front so we never persist a half-baked
+        // question. SINGLE = exactly one correct; MULTI = at least 2.
+        Question.Type qType = parseType(type);
+        List<String> texts = choiceTexts == null ? List.of() : choiceTexts;
+        List<Integer> correct = correctIndexes == null ? List.of() : correctIndexes;
+        int validCount = 0;
+        int validCorrect = 0;
+        for (int i = 0; i < texts.size(); i++) {
+            String t = texts.get(i);
+            if (t == null || t.isBlank()) continue;
+            validCount++;
+            if (correct.contains(i)) validCorrect++;
+        }
+        if (validCount < 2) {
+            throw new IllegalArgumentException("Need at least 2 choices.");
+        }
+        if (qType == Question.Type.SINGLE && validCorrect != 1) {
+            throw new IllegalArgumentException("A SINGLE question must have exactly one correct answer.");
+        }
+        if (qType == Question.Type.MULTI && validCorrect < 2) {
+            throw new IllegalArgumentException("A MULTI question must have at least two correct answers.");
+        }
+
+        // Find next per-exam number — same logic as the bulk import path.
+        int nextNumber = repo.findFirstByExamOrderByNumberDesc(exam)
+                .map(q -> q.getNumber() + 1).orElse(1);
+
+        // Duplicate check — non-blocking. If we find a near-identical text
+        // already in the bank, tag the new row so the reviewer sees a warning.
+        String normalized = normalizeText(text);
+        Question dup = null;
+        for (Question existing : repo.findAllActiveByExam(exam)) {
+            if (normalizeText(existing.getText()).equals(normalized)) { dup = existing; break; }
+        }
+
+        Question q = new Question();
+        q.setExam(exam);
+        q.setStatus(Question.Status.PENDING);
+        q.setNumber(nextNumber);
+        q.setType(qType);
+        q.setText(text.trim());
+        q.setExplanation(blankToNull(explanation));
+        q.setHelpUrl(blankToNull(helpUrl));
+        // Stamp a sourceUrl-like marker so reviewers see who composed it.
+        if (creatorEmail != null && !creatorEmail.isBlank()) {
+            q.setSourceUrl("manual:" + creatorEmail);
+        }
+        if (dup != null) q.setDuplicateOfId(dup.getId());
+
+        // Add the non-blank choices in their submitted order, auto-labelled.
+        int label = 0;
+        for (int i = 0; i < texts.size(); i++) {
+            String t = texts.get(i);
+            if (t == null || t.isBlank()) continue;
+            Choice ch = new Choice();
+            ch.setLabel(letterFor(label++));
+            ch.setText(t.trim());
+            ch.setCorrect(correct.contains(i));
+            q.addChoice(ch);
+        }
+        repo.save(q);
+        log.info("Manual question created: exam='{}' #{} by={} type={} choices={}",
+                exam.getSlug(), nextNumber, creatorEmail, qType, label);
+        return new ManualCreateResult(q.getId(), nextNumber, exam.getSlug());
+    }
+
     @Transactional
     public void update(Long id, String type, String text, String explanation, String helpUrl,
                        List<String> choiceTexts, List<Integer> correctIndexes) {

@@ -176,6 +176,12 @@
   <p class="muted" th:if="${param.deleted}">Deleted.</p>
   <p class="banner banner-error" th:if="${uploadError}" th:text="${uploadError}">error</p>
 
+  <section class="admin-section" style="background:#f0f7ff;border:1px solid #bfdbfe;">
+    <h2 style="margin-bottom:6px;">Compose a question from scratch</h2>
+    <p class="muted" style="margin-bottom:10px;">Prefer to type the question yourself? Use the form-based composer — pick a cert, write the question, mark the correct choice(s), and add an explanation.</p>
+    <a class="btn btn-primary" href="/uploads/manual">Open question composer →</a>
+  </section>
+
   <section class="admin-section">
     <h2>Upload a file</h2>
     <p class="muted">Pick the test first, then drop a screenshot, PDF, or text/markdown/HTML file. Claude extracts the questions and they wait for admin approval.</p>

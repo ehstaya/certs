@@ -2,9 +2,12 @@ package com.sfquiz.controller;
 
 import com.sfquiz.dto.ExamDto;
 import com.sfquiz.entity.StudyUpload;
+import com.sfquiz.entity.User;
 import com.sfquiz.repository.StudyUploadRepository;
+import com.sfquiz.service.AuthorizationService;
 import com.sfquiz.service.CostMeter;
 import com.sfquiz.service.ExamService;
+import com.sfquiz.service.QuestionAdminService;
 import com.sfquiz.service.TextExtractor;
 import com.sfquiz.service.UploadProcessor;
 import org.slf4j.Logger;
@@ -51,15 +54,38 @@ public class StudyUploadController {
     private final UploadProcessor processor;
     private final CostMeter costs;
     private final ExamService examService;
+    private final QuestionAdminService questionAdmin;
+    private final AuthorizationService authz;
 
     public StudyUploadController(StudyUploadRepository uploads,
                                  UploadProcessor processor,
                                  CostMeter costs,
-                                 ExamService examService) {
+                                 ExamService examService,
+                                 QuestionAdminService questionAdmin,
+                                 AuthorizationService authz) {
         this.uploads = uploads;
         this.processor = processor;
         this.costs = costs;
         this.examService = examService;
+        this.questionAdmin = questionAdmin;
+        this.authz = authz;
+    }
+
+    /** The exams the caller is allowed to upload / compose questions for.
+     *  Domain admins are restricted to certs they govern; everyone else
+     *  sees every active exam (regular users contribute material to any
+     *  cert; super admin doesn't compose questions, but if they land
+     *  here they see all). Empty result = no allowed certs. */
+    private List<ExamDto> examsAllowedFor(Authentication auth) {
+        User u = authz.currentUser(auth).orElse(null);
+        // Domain admins only see their assignments.
+        if (u != null && u.getRole() == com.sfquiz.entity.UserRole.ADMIN) {
+            java.util.Set<String> managed = authz.managedExamSlugs(u);
+            return examService.listActive().stream()
+                    .filter(e -> managed.contains(e.slug()))
+                    .toList();
+        }
+        return examService.listActive();
     }
 
     @GetMapping
@@ -71,7 +97,10 @@ public class StudyUploadController {
                 : uploads.findTop50ByUploadedByEmailIgnoreCaseOrderByUploadedAtDesc(email);
         model.addAttribute("uploads", rows);
         model.addAttribute("isAdmin", admin);
-        model.addAttribute("exams", examService.listActive());
+        // Scope the cert dropdown to the caller's managed certs for domain
+        // admins so they can't upload material against an exam they don't
+        // own. Regular users + super admins see every active exam.
+        model.addAttribute("exams", examsAllowedFor(auth));
         model.addAttribute("allowedExt", String.join(", ", TextExtractor.ALL_SUPPORTED));
         model.addAttribute("maxMb", MAX_BYTES / (1024 * 1024));
         model.addAttribute("budgetUsd", costs.dailyBudgetUsd());
@@ -79,6 +108,53 @@ public class StudyUploadController {
         model.addAttribute("remainingUsd", costs.remainingToday());
         model.addAttribute("budgetExhausted", costs.budgetExhausted());
         return "uploads";
+    }
+
+    /** Manual question composition — form view. Lives at /uploads/manual
+     *  so the existing top-nav "Add questions" link covers both file/paste
+     *  upload AND the manual compose. Cert dropdown is scoped to the
+     *  caller's allowed exams (same rule as the upload form). */
+    @GetMapping("/manual")
+    public String manualForm(Authentication auth, Model model) {
+        model.addAttribute("exams", examsAllowedFor(auth));
+        return "manual-question";
+    }
+
+    /** Manual question submit — creates a single PENDING question via
+     *  QuestionAdminService.createManual. Choice rows arrive as parallel
+     *  arrays {@code choiceText[]} + {@code correct[]} (the latter is the
+     *  list of indexes ticked correct, matching the existing edit form).
+     *  Validation errors come back via flash and the form re-renders. */
+    @PostMapping("/manual")
+    public String submitManual(Authentication auth,
+                               @RequestParam("examSlug") String examSlug,
+                               @RequestParam("type") String type,
+                               @RequestParam("text") String text,
+                               @RequestParam(name = "explanation", required = false) String explanation,
+                               @RequestParam(name = "helpUrl", required = false) String helpUrl,
+                               @RequestParam(name = "choiceText", required = false) List<String> choiceText,
+                               @RequestParam(name = "correct", required = false) List<Integer> correctIdx,
+                               RedirectAttributes flash) {
+        // Defence in depth — domain admins can't compose a question on a
+        // cert they don't manage even if they POST the slug directly.
+        boolean allowed = examsAllowedFor(auth).stream().anyMatch(e -> e.slug().equals(examSlug));
+        if (!allowed) {
+            flash.addFlashAttribute("manualError",
+                    "You're not authorised to add questions to that certification.");
+            return "redirect:/uploads/manual";
+        }
+        try {
+            QuestionAdminService.ManualCreateResult result = questionAdmin.createManual(
+                    examSlug, type, text, explanation, helpUrl,
+                    choiceText, correctIdx, currentEmail(auth));
+            flash.addFlashAttribute("manualMessage",
+                    "Question #" + result.number() + " for '" + result.examSlug()
+                            + "' submitted for review. A domain admin will approve, edit, or reject it shortly.");
+            return "redirect:/uploads/manual";
+        } catch (IllegalArgumentException ex) {
+            flash.addFlashAttribute("manualError", ex.getMessage());
+            return "redirect:/uploads/manual";
+        }
     }
 
     @PostMapping
