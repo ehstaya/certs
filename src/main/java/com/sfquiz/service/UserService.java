@@ -139,9 +139,10 @@ public class UserService {
         String body = "Hi " + safeName(u) + ",\n\n" +
                 "Your account on Salesforce Admin Quiz has been approved.\n\n" +
                 "Sign in here: " + baseUrl + "/login\n" +
-                "Email:           " + u.getEmail() + "\n" +
+                "Email:              " + u.getEmail() + "\n" +
                 "Temporary password: " + tempPassword + "\n\n" +
-                "You will be required to set a new password on first sign-in.\n";
+                "You will be required to set a new password on first sign-in.\n\n" +
+                "Tip: If you have trouble signing in on Chrome (saved passwords auto-fill or block the temp password), try Chrome's Incognito mode or another browser. This is almost always a saved-password conflict, not an account issue.\n";
         // Best-effort email; failures don't block the approval — the admin can
         // share the temp password directly from the /admin page banner.
         try {
@@ -169,9 +170,10 @@ public class UserService {
         String body = "Hi " + safeName(u) + ",\n\n" +
                 "An admin issued a new temporary password for your Salesforce Admin Quiz account.\n\n" +
                 "Sign in here: " + baseUrl + "/login\n" +
-                "Email:           " + u.getEmail() + "\n" +
+                "Email:              " + u.getEmail() + "\n" +
                 "Temporary password: " + tempPassword + "\n\n" +
-                "You will be required to set a new password on first sign-in.\n";
+                "You will be required to set a new password on first sign-in.\n\n" +
+                "Tip: If you have trouble signing in on Chrome (saved passwords auto-fill or block the temp password), try Chrome's Incognito mode or another browser. This is almost always a saved-password conflict, not an account issue.\n";
         try {
             email.send(u.getEmail(), "Salesforce Admin Quiz — new temporary password", body);
         } catch (Exception ex) {

@@ -59,9 +59,32 @@
     <h2 th:if="${issuedReason == 'reset'}">Password reset — share these credentials</h2>
     <h2 th:if="${issuedReason == 'created'}">User created — share these credentials</h2>
     <p class="issued-hint">
-      Copy &amp; paste this into Slack / DM. The temporary password is shown <strong>once</strong> —
-      reload this page and it's gone. The user will be forced to change it on first sign-in.
+      Copy &amp; paste the block below into Slack or email to send to
+      <strong th:text="${issuedFullName != null and not #strings.isEmpty(issuedFullName) ? issuedFullName : issuedEmail}">User</strong>.
+      The temporary password is shown <strong>once</strong> — reload this page and it's gone.
+      The user will be forced to change it on first sign-in.
     </p>
+
+    <!-- Ready-to-paste copy block. Greets the user by name and includes the
+         Chrome/incognito tip up-front so SSO-saved-password collisions don't
+         derail their first login. -->
+    <pre class="issued-copyblock" id="issuedCopyBlock"
+         style="background:#0b1220;color:#e5e7eb;padding:14px 16px;border-radius:8px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow:auto;border:1px solid #1f2937;"
+         th:text="|Hi ${issuedFullName != null and not #strings.isEmpty(issuedFullName) ? issuedFullName : 'there'},
+
+Your Certification Practice Playground account is ready. Sign in here:
+
+  Sign-in URL:        https://sfquiz-myaqub-ps-3c458a1f583d.herokuapp.com/login
+  Email:              ${issuedEmail}
+  Temporary password: ${issuedPassword}
+
+You'll be asked to set a new password on first sign-in.
+
+Tip: If you have trouble signing in on Chrome (saved passwords auto-fill or block the temp password), try Chrome's Incognito mode or another browser. This is almost always a saved-password conflict, not an account issue.|">copy block</pre>
+    <div style="margin:8px 0 14px 0;display:flex;gap:8px;">
+      <button type="button" class="btn btn-sm" onclick="(function(){var t=document.getElementById('issuedCopyBlock').textContent;navigator.clipboard.writeText(t).then(function(){var b=event.target;var o=b.textContent;b.textContent='Copied!';setTimeout(function(){b.textContent=o;},1600);});})()">Copy block</button>
+    </div>
+
     <table class="issued-table">
       <tr><th>Email</th><td><code th:text="${issuedEmail}">user@example.com</code></td></tr>
       <tr th:if="${issuedFullName != null and not #strings.isEmpty(issuedFullName)}">
