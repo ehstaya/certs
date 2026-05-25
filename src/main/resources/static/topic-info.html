@@ -82,10 +82,12 @@
       const role = me.role || "USER";
       const badge = document.getElementById("userBadge");
       if (badge) badge.textContent = name + " (" + role + ")";
-      if (role === "ADMIN" || role === "SUPERADMIN") {
+      if (role === "ADMIN") {
         document.querySelectorAll(".admin-only").forEach(el => { el.style.display = ""; });
-        if(d.role==="SUPERADMIN"){document.querySelectorAll(".superadmin-only").forEach(e=>e.style.display="");}
-    if(d.role==="SUPERADMIN"){document.querySelectorAll(".user-link").forEach(e=>e.style.display="none");}
+      }
+      if (role === "SUPERADMIN") {
+        document.querySelectorAll(".superadmin-only").forEach(el => { el.style.display = ""; });
+        document.querySelectorAll(".user-link").forEach(el => { el.style.display = "none"; });
       }
     }
 
