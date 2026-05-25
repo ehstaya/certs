@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Certifications — Admin Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="/js/confirm.js" defer></script>
+  <style>
+    .new-cert-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; align-items: end; }
+    .new-cert-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
+    .new-cert-form input { padding: 8px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; }
+    .new-cert-form textarea { padding: 8px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; font-family: inherit; min-height: 60px; }
+    .new-cert-form .cert-submit-row { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
+    .matrix-table th, .matrix-table td { vertical-align: middle; }
+    .matrix-table th.exam-col { text-align: center; min-width: 130px; font-size: 12px; }
+    .matrix-table .checkbox-row { padding: 6px 10px; }
+    .cert-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--gray-100, #f3f4f6); }
+    .cert-row:last-child { border-bottom: none; }
+    .cert-row-meta { font-size: 12px; color: var(--gray-500, #6b7280); }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
+    <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"||d.role==="SUPERADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".superadmin-only").forEach(e=>e.style.display="");}
+  });
+})();
+</script>
+
+<main class="admin-wrap">
+  <p class="muted" style="margin-bottom:12px;"><a href="/admin">‹ Admin Dashboard</a></p>
+  <h1>Certifications</h1>
+  <p class="muted">
+    Manage the certifications hosted on the platform. Add a new cert here to give super admins a slot to assign a domain admin to it.
+    Every new certification appears automatically as a new column in the assignment matrix below.
+  </p>
+
+  <p class="banner banner-error" th:if="${certError}" th:text="${certError}">error</p>
+  <p class="banner banner-ok"    th:if="${certMessage}" th:text="${certMessage}">message</p>
+  <p class="banner banner-ok"    th:if="${adminMessage}" th:text="${adminMessage}">message</p>
+
+  <section class="admin-section">
+    <h2>Add a new certification</h2>
+    <p class="muted">Basic metadata only — name, slug, duration, passing score. Topic breakdown (and Claude-parsed score breakdown from a screenshot or pasted text) lands as a follow-up. Once created, the cert appears in the assignment matrix below so you can immediately assign a domain admin.</p>
+    <form method="post" action="/admin/certifications/new" class="new-cert-form">
+      <label>
+        <span>Certification name *</span>
+        <input type="text" name="name" required placeholder="e.g. Salesforce Marketing Cloud Admin" autocomplete="off" />
+      </label>
+      <label>
+        <span>Slug (optional)</span>
+        <input type="text" name="slug" placeholder="auto-derived from name" autocomplete="off"
+               pattern="[a-z0-9\-]*" title="lowercase, digits, and hyphens only" />
+      </label>
+      <label>
+        <span>Description</span>
+        <textarea name="description" placeholder="One-line description shown on the exam picker."></textarea>
+      </label>
+      <label>
+        <span>Questions / session</span>
+        <input type="number" name="questionsPerSession" value="60" min="5" max="200" />
+      </label>
+      <label>
+        <span>Duration (minutes)</span>
+        <input type="number" name="durationMinutes" value="90" min="5" max="600" />
+      </label>
+      <label>
+        <span>Passing score (%)</span>
+        <input type="number" name="passingScorePercent" value="65" min="1" max="100" />
+      </label>
+      <div class="cert-submit-row">
+        <button class="btn btn-primary" type="submit">Create certification</button>
+        <span class="muted">Adds the cert as ACTIVE so it shows on the exam picker right away.</span>
+      </div>
+    </form>
+  </section>
+
+  <section class="admin-section">
+    <h2>Existing certifications <span class="count" th:text="'(' + ${#lists.size(exams)} + ')'">(0)</span></h2>
+    <div class="empty" th:if="${#lists.isEmpty(exams)}">No certifications yet. Add one above.</div>
+    <div th:unless="${#lists.isEmpty(exams)}">
+      <div class="cert-row" th:each="e : ${exams}">
+        <div>
+          <strong th:text="${e.name}">Name</strong>
+          <span class="cert-row-meta">
+            · <code th:text="${e.slug}">slug</code>
+            · <span th:text="${e.questionsPerSession + ' Q'}">60 Q</span>
+            · <span th:text="${e.durationMinutes + ' min'}">90 min</span>
+            · pass at <span th:text="${e.passingScorePercent + '%'}">65%</span>
+            · <span th:text="${e.active} ? 'ACTIVE' : 'inactive'">ACTIVE</span>
+          </span>
+          <div class="cert-row-meta" th:if="${e.description != null and !#strings.isEmpty(e.description)}" th:text="${e.description}">desc</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Domain admin assignments — every ADMIN/SUPERADMIN user gets a row, every
+       active exam is a column. Matrix expands automatically as new certs are
+       added above. -->
+  <section class="admin-section">
+    <h2>Domain admin assignments</h2>
+    <p class="muted">A <strong>domain admin</strong> (ADMIN role) can only review / approve / reject / edit / retire questions on the cert(s) you tick below. SUPERADMINs implicitly govern every cert — their rows are read-only.</p>
+    <div class="empty" th:if="${#lists.isEmpty(adminUsers)}">No active admin users yet. Promote a user on the <a href="/admin/users">Users page</a> first.</div>
+    <div class="empty" th:if="${!#lists.isEmpty(adminUsers) and #lists.isEmpty(activeExams)}">No active certifications. Add one above.</div>
+    <div th:unless="${#lists.isEmpty(adminUsers) or #lists.isEmpty(activeExams)}">
+      <table class="admin-table matrix-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th th:each="ex : ${activeExams}" class="exam-col" th:text="${ex.name}">Exam</th>
+            <th class="actions-col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="u : ${adminUsers}">
+            <td>
+              <div th:text="${u.fullName != null and !#strings.isEmpty(u.fullName)} ? ${u.fullName} : ${u.email}">Name</div>
+              <div class="muted" style="font-size:12px"
+                   th:if="${u.fullName != null and !#strings.isEmpty(u.fullName)}"
+                   th:text="${u.email}">email</div>
+            </td>
+            <td>
+              <span th:text="${u.role}" style="font-size:12px;font-weight:600;">ROLE</span>
+              <div class="muted" th:if="${u.role.name() == 'SUPERADMIN'}" style="font-size:11px;">all certs</div>
+            </td>
+            <th:block th:if="${u.role.name() == 'SUPERADMIN'}">
+              <td th:each="ex : ${activeExams}" style="text-align:center;">
+                <span title="Super admins implicitly govern every certification">✓</span>
+              </td>
+              <td class="actions-col"></td>
+            </th:block>
+            <th:block th:if="${u.role.name() == 'ADMIN'}">
+              <td colspan="0" style="padding:0;" th:colspan="${#lists.size(activeExams) + 1}">
+                <form method="post" th:action="@{|/admin/users/${u.id}/domain-assignments|}" class="checkbox-row" style="display:flex; align-items:center; gap:8px;">
+                  <th:block th:each="ex : ${activeExams}">
+                    <label style="display:inline-flex; align-items:center; gap:4px; min-width:130px; justify-content:center; font-size:13px;">
+                      <input type="checkbox" name="exams" th:value="${ex.slug}"
+                             th:checked="${assigned[u.id] != null and assigned[u.id].contains(ex.slug)}" />
+                      <span class="muted" style="font-size:11px;" th:text="${ex.slug}">slug</span>
+                    </label>
+                  </th:block>
+                  <button class="btn btn-primary btn-sm" type="submit" style="margin-left:auto;">Save</button>
+                </form>
+              </td>
+            </th:block>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+</body>
+</html>

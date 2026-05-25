@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>User Administration — Salesforce Admin Quiz</title>
+  <title>User Management — Admin Dashboard</title>
   <link rel="stylesheet" href="/css/style.css" />
   <script src="/js/confirm.js" defer></script>
 </head>
@@ -13,10 +13,9 @@
   <div class="topbar-actions">
     <a class="topbar-link" href="/">Exams</a>
     <a class="topbar-link" href="/my/reports">My reports</a>
-    <a class="topbar-link" href="/admin">Users</a>
-    <a class="topbar-link" href="/admin/questions">Questions for Review</a>
-    <a class="topbar-link" href="/admin/reports">Reports</a>
-    <a class="topbar-link" href="/uploads">Uploads</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
+    <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
     <a class="topbar-link" href="/change-password">Change password</a>
     <span class="topbar-user" id="userBadge"></span>
     <form method="post" action="/logout" style="display:inline">
@@ -34,17 +33,18 @@
       if(!el) return;
       const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
       el.textContent=name+" ("+(d.role||"USER")+")";
+      if(d.role==="ADMIN"||d.role==="SUPERADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+      if(d.role==="SUPERADMIN"){document.querySelectorAll(".superadmin-only").forEach(e=>e.style.display="");}
     });
 })();
 </script>
 
 <main class="admin-wrap">
-  <h1>User administration</h1>
-  <p class="muted" sec:authorize="hasRole('SUPERADMIN')">
-    Approve new registrations. Approving a user generates a temporary password and emails it to them; they will be required to change it on first sign-in. As a <strong>super admin</strong> you can also assign domain admins to specific exams via the matrix at the bottom of the page.
-  </p>
-  <p class="muted" sec:authorize="!hasRole('SUPERADMIN')" style="background:#fef3c7;border-left:3px solid #f59e0b;padding:8px 12px;border-radius:4px;">
-    ℹ Read-only view. Only a <strong>super admin</strong> can promote / demote users or change domain-admin assignments. As a domain admin you can still review and manage questions for the exam(s) you've been assigned.
+  <p class="muted" style="margin-bottom:12px;"><a href="/admin">‹ Admin Dashboard</a></p>
+  <h1>User management</h1>
+  <p class="muted">
+    Create users, approve pending registrations, promote / demote roles, reset passwords, and delete accounts. Super-admin only.
+    Domain-admin <em>exam</em> assignments live on the <a href="/admin/certifications">Certifications</a> page.
   </p>
 
   <p class="banner banner-error" th:if="${adminError}" th:text="${adminError}">error</p>
@@ -95,51 +95,7 @@ Tip: If you have trouble signing in on Chrome (saved passwords auto-fill or bloc
     </table>
   </section>
 
-  <!-- Slack integration status. SUPERADMIN-only. Drives the once-per-24h
-       pending-review digest posted to the configured Slack channel. -->
-  <section class="admin-section" sec:authorize="hasRole('SUPERADMIN')">
-    <h2>Slack integration</h2>
-    <div th:if="${slackConfigured}" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">
-      <span class="pct-pill good" style="font-weight:600;">✓ Webhook configured</span>
-      <span class="pct-pill good" th:if="${slackMentionsLive}" style="font-weight:600;">✓ Real @-mentions enabled</span>
-      <span class="pct-pill mid" th:unless="${slackMentionsLive}" style="font-weight:600;background:#fef3c7;color:#92400e;">@-mentions: plain text only</span>
-      <span class="muted" th:if="${slackLastPostedAt != null}">
-        Last digest posted: <strong th:text="${#temporals.format(slackLastPostedAt, 'yyyy-MM-dd HH:mm z')}">—</strong>
-        (next reminder ~24h after that).
-      </span>
-      <span class="muted" th:if="${slackLastPostedAt == null}">No digest posted yet.</span>
-      <form method="post" action="/admin/users/slack-test" style="display:inline;">
-        <button class="btn btn-sm" type="submit"
-                data-confirm-title="Send Slack test message"
-                data-confirm="Post a pending-review digest to the configured Slack channel right now (bypassing the 24-hour throttle)? Use this once to confirm the webhook is wired up correctly."
-                data-confirm-ok="Send now">
-          Send test message
-        </button>
-      </form>
-    </div>
-    <div th:unless="${slackConfigured}" style="background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:4px;">
-      <strong>Not configured.</strong> Set the <code>SLACK_WEBHOOK_URL</code> environment variable to an
-      <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener">incoming-webhook URL</a>
-      for the channel that should receive review reminders, then restart the app.
-      Once configured, a scheduled job posts a digest of pending questions once every 24 hours until the queue is cleared.
-    </div>
-    <div th:if="${slackConfigured and !slackMentionsLive}"
-         style="background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:4px;margin-top:8px;">
-      <strong>Optional — turn @-mentions into real Slack pings:</strong>
-      The digest currently lists domain admins as plain text (no notification). To upgrade to real
-      <code>@Amit Revankar</code>-style pings that ring the recipient's Slack:
-      <ol style="margin:8px 0 0 18px;padding:0;">
-        <li>In your Slack app → <strong>OAuth &amp; Permissions</strong>, add the bot-token scope
-            <code>users:read.email</code> (and <code>users:read</code> if missing), then reinstall the app.</li>
-        <li>Copy the <strong>Bot User OAuth Token</strong> (starts with <code>xoxb-</code>).</li>
-        <li>Set <code>SLACK_BOT_TOKEN</code> on the platform and redeploy.</li>
-      </ol>
-      Without the token, names still appear in the digest — they just don't trigger a notification.
-      The recipient's Slack account email must match their app account email for the lookup to succeed.
-    </div>
-  </section>
-
-  <section class="admin-section" sec:authorize="hasRole('SUPERADMIN')">
+  <section class="admin-section">
     <h2>Add a user manually</h2>
     <p class="muted">Create an ACTIVE account in one step. A temp password is generated and shown here once — copy &amp; share via Slack. The user must change it on first sign-in.</p>
     <form method="post" action="/admin/users/new" class="add-user-form">
@@ -281,62 +237,6 @@ If you just want to revoke access without losing data, click Disable instead.|"
         </tr>
       </tbody>
     </table>
-  </section>
-
-  <!-- Domain admin assignments. Each ADMIN/SUPERADMIN user gets a row; each
-       active exam is a checkbox. SUPERADMIN-only. The matrix grows
-       automatically as new exams are added to the platform — no extra UI
-       wiring needed when a new certification ships. -->
-  <section class="admin-section" sec:authorize="hasRole('SUPERADMIN')">
-    <h2>Domain admin assignments</h2>
-    <p class="muted">A domain admin (ADMIN role) can only review/approve/reject/edit/retire questions for the exam(s) you tick below. SUPERADMINs implicitly govern every exam — their rows are shown for visibility but the checkboxes are read-only / informational. New certifications added to the platform appear here automatically as new columns.</p>
-    <div class="empty" th:if="${#lists.isEmpty(active)}">No active admin users yet.</div>
-    <div th:unless="${#lists.isEmpty(activeExams)}">
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Role</th>
-            <th th:each="ex : ${activeExams}" th:text="${ex.name}" style="text-align:center; min-width:120px;">Exam</th>
-            <th class="actions-col"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr th:each="u : ${active}" th:if="${u.role.name() == 'ADMIN' or u.role.name() == 'SUPERADMIN'}">
-            <td>
-              <div th:text="${u.fullName != null and !#strings.isEmpty(u.fullName)} ? ${u.fullName} : ${u.email}">Name</div>
-              <div class="muted" style="font-size:12px"
-                   th:if="${u.fullName != null and !#strings.isEmpty(u.fullName)}"
-                   th:text="${u.email}">email</div>
-            </td>
-            <td>
-              <span th:text="${u.role}" style="font-size:12px;font-weight:600;">ROLE</span>
-              <div class="muted" th:if="${u.role.name() == 'SUPERADMIN'}" style="font-size:11px;">all exams</div>
-            </td>
-            <th:block th:if="${u.role.name() == 'SUPERADMIN'}">
-              <td th:each="ex : ${activeExams}" style="text-align:center;">
-                <span title="Super admins implicitly govern every exam">✓</span>
-              </td>
-              <td class="actions-col"></td>
-            </th:block>
-            <th:block th:if="${u.role.name() == 'ADMIN'}">
-              <td colspan="0" style="padding:0;" th:colspan="${#lists.size(activeExams) + 1}">
-                <form method="post" th:action="@{|/admin/users/${u.id}/domain-assignments|}" style="display:flex; align-items:center; gap:8px; padding:8px 12px;">
-                  <th:block th:each="ex : ${activeExams}">
-                    <label style="display:inline-flex; align-items:center; gap:4px; min-width:120px; justify-content:center; font-size:13px;">
-                      <input type="checkbox" name="exams" th:value="${ex.slug}"
-                             th:checked="${assigned[u.id] != null and assigned[u.id].contains(ex.slug)}" />
-                      <span class="muted" style="font-size:11px;" th:text="${ex.slug}">slug</span>
-                    </label>
-                  </th:block>
-                  <button class="btn btn-primary btn-sm" type="submit" style="margin-left:auto;">Save</button>
-                </form>
-              </td>
-            </th:block>
-          </tr>
-        </tbody>
-      </table>
-    </div>
   </section>
 
   <section class="admin-section" th:unless="${#lists.isEmpty(rejected)}">

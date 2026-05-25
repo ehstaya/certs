@@ -61,4 +61,61 @@ public class ExamService {
     public ExamDto toDto(Exam e) {
         return ExamDto.from(e, questions.countByExamAndStatus(e, Question.Status.APPROVED));
     }
+
+    /** Create a new certification. SUPERADMIN-only path; the controller
+     *  enforces auth via {@code /admin/certifications/**} guard. Slug is
+     *  derived from the name when not supplied. Refuses duplicates so the
+     *  unique constraint never explodes mid-request. */
+    public Exam createExam(String name, String slug, String description,
+                           int questionsPerSession, int durationMinutes,
+                           int passingScorePercent) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Certification name is required.");
+        }
+        String trimmedName = name.trim();
+        String resolvedSlug = (slug == null || slug.isBlank()) ? slugify(trimmedName) : slug.trim().toLowerCase();
+        if (resolvedSlug.isBlank()) {
+            throw new IllegalArgumentException("Could not derive a valid slug from the name. Please provide one explicitly.");
+        }
+        if (exams.findBySlug(resolvedSlug).isPresent()) {
+            throw new IllegalArgumentException("A certification with slug '" + resolvedSlug + "' already exists.");
+        }
+        Exam e = new Exam();
+        e.setSlug(resolvedSlug);
+        e.setName(trimmedName);
+        e.setDescription(description == null ? "" : description.trim());
+        e.setQuestionsPerSession(clamp(questionsPerSession, 5, 200, 60));
+        e.setDurationMinutes(clamp(durationMinutes, 5, 600, 90));
+        e.setPassingScorePercent(clamp(passingScorePercent, 1, 100, 65));
+        e.setActive(true);
+        e.setSortOrder(100);
+        return exams.save(e);
+    }
+
+    /** All exams (active and otherwise) for the management list. */
+    public List<Exam> listAllOrdered() {
+        return exams.findAll().stream()
+                .sorted((a, b) -> {
+                    int s = Integer.compare(a.getSortOrder(), b.getSortOrder());
+                    return s != 0 ? s : a.getName().compareToIgnoreCase(b.getName());
+                })
+                .toList();
+    }
+
+    private static int clamp(int v, int min, int max, int fallback) {
+        if (v <= 0) return fallback;
+        if (v < min) return min;
+        if (v > max) return max;
+        return v;
+    }
+
+    /** Lowercase, ASCII-safe slug from a free-text name. Replaces runs of
+     *  non-alphanumeric chars with single hyphens, strips leading/trailing
+     *  hyphens. {@code "Salesforce Admin (CRT-101)"} → {@code "salesforce-admin-crt-101"}. */
+    private static String slugify(String s) {
+        if (s == null) return "";
+        String lower = s.toLowerCase().trim();
+        String dashed = lower.replaceAll("[^a-z0-9]+", "-");
+        return dashed.replaceAll("^-+|-+$", "");
+    }
 }

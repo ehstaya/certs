@@ -43,13 +43,20 @@ public class SecurityConfig {
                         "/css/**", "/js/**", "/images/**", "/webjars/**",
                         "/favicon.ico", "/error"
                 ).permitAll()
-                // User-management endpoints are SUPERADMIN-only — domain
-                // admins can only manage questions, never other users.
+                // User-management, cross-cert reports, and certification
+                // management are all SUPERADMIN-only — domain admins can
+                // only manage questions on the exam(s) they govern.
                 .requestMatchers("/admin/users/**").hasRole("SUPERADMIN")
-                // Everything else under /admin/** is open to both ADMIN
-                // (domain admin) and SUPERADMIN; per-action scoping (which
-                // exam(s) a domain admin governs) is enforced server-side
-                // by AuthorizationService.canManageQuestion / canManageExam.
+                .requestMatchers("/admin/reports/**").hasRole("SUPERADMIN")
+                .requestMatchers("/admin/certifications/**").hasRole("SUPERADMIN")
+                // The /admin landing itself is the super-admin dashboard.
+                // Domain admins land on /admin/questions directly via the
+                // top nav and never see /admin.
+                .requestMatchers("/admin").hasRole("SUPERADMIN")
+                // /admin/questions/** (the review queue) is the only admin
+                // area open to domain admins. Per-question scoping (which
+                // exam they govern) is enforced server-side by
+                // AuthorizationService.canManageQuestion / canManageExam.
                 .requestMatchers("/admin/**").hasAnyRole("ADMIN", "SUPERADMIN")
                 // /uploads/** is open to any authenticated user — non-admins
                 // can submit study material; the controller scopes the listing

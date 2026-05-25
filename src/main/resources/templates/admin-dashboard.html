@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard — Certification Practice Playground</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .ad-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin: 18px 0 28px;
+    }
+    .ad-card {
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border: 1px solid var(--gray-200, #e5e7eb);
+      border-radius: 12px;
+      padding: 18px 20px;
+      text-decoration: none;
+      color: inherit;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
+                  0 4px 12px rgba(15, 23, 42, 0.04);
+      border-top: 3px solid var(--brand-primary, #0176D3);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .ad-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(15, 23, 42, 0.06),
+                  0 8px 18px rgba(15, 23, 42, 0.07);
+    }
+    .ad-card.users  { border-top-color: var(--brand-primary, #0176D3); }
+    .ad-card.certs  { border-top-color: #6366f1; }
+    .ad-card.reports{ border-top-color: #047857; }
+    .ad-card.slack  { border-top-color: #d97706; }
+
+    .ad-card-icon { font-size: 24px; line-height: 1; margin-bottom: 6px; }
+    .ad-card-title { font-size: 16px; font-weight: 700; color: var(--brand-navy, #032D60); }
+    .ad-card-desc { font-size: 13px; color: var(--gray-700, #374151); margin-top: 4px; line-height: 1.45; }
+    .ad-card-stat { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-100, #f3f4f6); font-size: 12px; color: var(--gray-500, #6b7280); }
+    .ad-card-stat strong { font-size: 16px; color: var(--brand-navy, #032D60); font-variant-numeric: tabular-nums; }
+
+    .slack-status-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .pill-ok   { padding: 2px 10px; border-radius: 999px; background: #d1fae5; color: #065f46; font-size: 11px; font-weight: 700; }
+    .pill-warn { padding: 2px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 700; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">Exams</a>
+    <a class="topbar-link" href="/my/reports">My reports</a>
+    <a class="topbar-link" href="/uploads">Add questions</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
+    <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"||d.role==="SUPERADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".superadmin-only").forEach(e=>e.style.display="");}
+  });
+})();
+</script>
+
+<main class="admin-wrap">
+  <h1>Admin Dashboard</h1>
+  <p class="muted">Platform-wide controls. Every link below is super-admin only — domain admins land on the Questions queue instead and only see exams they govern.</p>
+
+  <section class="ad-grid">
+    <a class="ad-card users" href="/admin/users">
+      <div class="ad-card-icon">👥</div>
+      <div class="ad-card-title">User management</div>
+      <div class="ad-card-desc">Create users, approve pending registrations, promote / demote roles, reset passwords, delete accounts.</div>
+      <div class="ad-card-stat">
+        <strong th:text="${activeUserCount}">0</strong> active &nbsp;·&nbsp;
+        <strong th:text="${pendingUserCount}">0</strong> pending approval &nbsp;·&nbsp;
+        <strong th:text="${domainAdminCount}">0</strong> domain admins
+      </div>
+    </a>
+
+    <a class="ad-card certs" href="/admin/certifications">
+      <div class="ad-card-icon">🎓</div>
+      <div class="ad-card-title">Certifications</div>
+      <div class="ad-card-desc">List existing certifications, add a new one, and assign domain admins to each cert. Every new cert automatically becomes a slot in the assignment matrix.</div>
+      <div class="ad-card-stat">
+        <strong th:text="${activeExamCount}">0</strong> active certifications
+      </div>
+    </a>
+
+    <a class="ad-card reports" href="/admin/reports">
+      <div class="ad-card-icon">📊</div>
+      <div class="ad-card-title">Reports &amp; analytics</div>
+      <div class="ad-card-desc">Cross-cert dashboards, all-user scores, cert score trends, question quality, and verifier feedback. Super-admin only.</div>
+    </a>
+
+    <a class="ad-card slack" href="#slack">
+      <div class="ad-card-icon">💬</div>
+      <div class="ad-card-title">Slack integration</div>
+      <div class="ad-card-desc">Pending-review digest posted once every 24 hours to the configured channel, with optional real @-mention pings.</div>
+      <div class="slack-status-row">
+        <span th:if="${slackConfigured}" class="pill-ok">✓ Webhook</span>
+        <span th:unless="${slackConfigured}" class="pill-warn">Webhook not set</span>
+        <span th:if="${slackMentionsLive}" class="pill-ok">✓ Mentions</span>
+        <span th:unless="${slackMentionsLive}" class="pill-warn">No bot token</span>
+      </div>
+    </a>
+  </section>
+
+  <!-- Slack management card — kept on the dashboard because it's a single
+       global setting and lives nowhere else. Anchor links here from the
+       grid card above so the page scrolls cleanly. -->
+  <section class="admin-section" id="slack">
+    <h2>Slack integration</h2>
+    <div th:if="${slackConfigured}" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">
+      <span class="pct-pill good" style="font-weight:600;">✓ Webhook configured</span>
+      <span class="pct-pill good" th:if="${slackMentionsLive}" style="font-weight:600;">✓ Real @-mentions enabled</span>
+      <span class="pct-pill mid" th:unless="${slackMentionsLive}" style="font-weight:600;background:#fef3c7;color:#92400e;">@-mentions: plain text only</span>
+      <span class="muted" th:if="${slackLastPostedAt != null}">
+        Last digest posted: <strong th:text="${#temporals.format(slackLastPostedAt, 'yyyy-MM-dd HH:mm z')}">—</strong>
+        (next reminder ~24h after that).
+      </span>
+      <span class="muted" th:if="${slackLastPostedAt == null}">No digest posted yet.</span>
+      <form method="post" action="/admin/users/slack-test" style="display:inline;">
+        <button class="btn btn-sm" type="submit"
+                data-confirm-title="Send Slack test message"
+                data-confirm="Post a pending-review digest to the configured Slack channel right now (bypassing the 24-hour throttle)? Use this to confirm the webhook is wired up correctly."
+                data-confirm-ok="Send now">
+          Send test message
+        </button>
+      </form>
+    </div>
+    <div th:unless="${slackConfigured}" style="background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:4px;">
+      <strong>Not configured.</strong> Set the <code>SLACK_WEBHOOK_URL</code> environment variable to an
+      <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener">incoming-webhook URL</a>
+      for the channel that should receive review reminders, then restart the app.
+    </div>
+
+    <p class="banner banner-error" th:if="${adminError}" th:text="${adminError}">error</p>
+    <p class="banner banner-ok"    th:if="${adminMessage}" th:text="${adminMessage}">message</p>
+  </section>
+</main>
+
+<script src="/js/confirm.js" defer></script>
+</body>
+</html>

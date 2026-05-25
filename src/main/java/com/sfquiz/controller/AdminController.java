@@ -1,6 +1,5 @@
 package com.sfquiz.controller;
 
-import com.sfquiz.dto.ExamDto;
 import com.sfquiz.entity.User;
 import com.sfquiz.entity.UserRole;
 import com.sfquiz.entity.UserStatus;
@@ -19,11 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 @Controller
 @RequestMapping("/admin")
@@ -42,8 +37,35 @@ public class AdminController {
         this.slack = slack;
     }
 
+    /** SUPERADMIN dashboard — single landing for platform-wide admin
+     *  operations. Domain admins never see this page (path guarded to
+     *  SUPERADMIN by SecurityConfig); they go straight to
+     *  /admin/questions when they click "Questions" in the top nav. */
     @GetMapping
     public String dashboard(Model model) {
+        // Headline counts for the dashboard cards.
+        List<User> all = users.listAll();
+        long activeUserCount    = all.stream().filter(u -> u.getStatus() == UserStatus.ACTIVE).count();
+        long pendingUserCount   = all.stream().filter(u -> u.getStatus() == UserStatus.PENDING).count();
+        long domainAdminCount   = all.stream().filter(u -> u.getStatus() == UserStatus.ACTIVE)
+                                     .filter(u -> u.getRole() == UserRole.ADMIN).count();
+        long activeExamCount    = examService.listActive().size();
+
+        model.addAttribute("activeUserCount", activeUserCount);
+        model.addAttribute("pendingUserCount", pendingUserCount);
+        model.addAttribute("domainAdminCount", domainAdminCount);
+        model.addAttribute("activeExamCount", activeExamCount);
+
+        model.addAttribute("slackConfigured", slack.isConfigured());
+        model.addAttribute("slackMentionsLive", slack.mentionsAreLive());
+        model.addAttribute("slackLastPostedAt", slack.lastPostedAt());
+        return "admin-dashboard";
+    }
+
+    /** User-management page (was at /admin before the dashboard split).
+     *  All POST endpoints under /admin/users/* continue to redirect here. */
+    @GetMapping("/users")
+    public String userAdministration(Model model) {
         List<User> all = users.listAll();
         List<User> active = all.stream().filter(u -> u.getStatus() == UserStatus.ACTIVE).toList();
         model.addAttribute("pending", all.stream().filter(u -> u.getStatus() == UserStatus.PENDING).toList());
@@ -51,28 +73,10 @@ public class AdminController {
         model.addAttribute("rejected",all.stream().filter(u -> u.getStatus() == UserStatus.REJECTED).toList());
         model.addAttribute("disabled",all.stream().filter(u -> u.getStatus() == UserStatus.DISABLED).toList());
 
-        // Per-user list of exam-slugs they currently govern (drives the
-        // domain-admin assignment matrix on the page). Empty for non-admins.
-        List<ExamDto> activeExams = examService.listActive();
-        Map<Long, Set<String>> assigned = new HashMap<>();
-        for (User u : active) {
-            if (u.getRole() == UserRole.ADMIN || u.getRole() == UserRole.SUPERADMIN) {
-                assigned.put(u.getId(), new HashSet<>(domainAdmins.examSlugsFor(u)));
-            }
-        }
-        model.addAttribute("activeExams", activeExams);
-        model.addAttribute("assigned", assigned);
-
-        // Slack integration status — drives the small "Slack" card on /admin
-        // so the super admin can see at a glance whether the webhook is set,
-        // when the last digest was posted, and trigger a manual test. Also
-        // surfaces whether the optional bot-token is configured (which
-        // upgrades plain-text "@Name" pings into real <@U...> mentions that
-        // actually notify the recipient).
-        model.addAttribute("slackConfigured", slack.isConfigured());
-        model.addAttribute("slackMentionsLive", slack.mentionsAreLive());
-        model.addAttribute("slackLastPostedAt", slack.lastPostedAt());
-        return "admin";
+        // The matrix view of domain-admin assignments has been moved to
+        // /admin/certifications, alongside the certification list. The
+        // user page now focuses purely on user-lifecycle management.
+        return "admin-users";
     }
 
     /** Manually fire a Slack digest message. SUPERADMIN-only via the
@@ -112,7 +116,7 @@ public class AdminController {
         flash.addFlashAttribute("issuedFullName", result.user().getFullName());
         flash.addFlashAttribute("issuedPassword", result.tempPassword());
         flash.addFlashAttribute("issuedReason", "created");
-        return "redirect:/admin";
+        return "redirect:/admin/users";
     }
 
     @PostMapping("/users/{id}/approve")
@@ -122,7 +126,7 @@ public class AdminController {
         flash.addFlashAttribute("issuedFullName", result.user().getFullName());
         flash.addFlashAttribute("issuedPassword", result.tempPassword());
         flash.addFlashAttribute("issuedReason", "approved");
-        return "redirect:/admin";
+        return "redirect:/admin/users";
     }
 
     @PostMapping("/users/{id}/reset-password")
@@ -132,43 +136,43 @@ public class AdminController {
         flash.addFlashAttribute("issuedFullName", result.user().getFullName());
         flash.addFlashAttribute("issuedPassword", result.tempPassword());
         flash.addFlashAttribute("issuedReason", "reset");
-        return "redirect:/admin";
+        return "redirect:/admin/users";
     }
 
     @PostMapping("/users/{id}/reject")
     public String reject(@PathVariable Long id) {
         users.reject(id);
-        return "redirect:/admin?rejected";
+        return "redirect:/admin/users?rejected";
     }
 
     @PostMapping("/users/{id}/disable")
     public String disable(@PathVariable Long id) {
         users.disable(id);
-        return "redirect:/admin?disabled";
+        return "redirect:/admin/users?disabled";
     }
 
     @PostMapping("/users/{id}/reactivate")
     public String reactivate(@PathVariable Long id) {
         users.reactivate(id);
-        return "redirect:/admin?reactivated";
+        return "redirect:/admin/users?reactivated";
     }
 
     @PostMapping("/users/{id}/promote")
     public String promote(@PathVariable Long id) {
         users.promoteToAdmin(id);
-        return "redirect:/admin?promoted";
+        return "redirect:/admin/users?promoted";
     }
 
     @PostMapping("/users/{id}/promote-superadmin")
     public String promoteSuperAdmin(@PathVariable Long id) {
         users.promoteToSuperAdmin(id);
-        return "redirect:/admin?promotedSuper";
+        return "redirect:/admin/users?promotedSuper";
     }
 
     @PostMapping("/users/{id}/demote-superadmin")
     public String demoteSuperAdmin(@PathVariable Long id, Authentication auth) {
         users.demoteSuperAdminToAdmin(id, auth == null ? null : auth.getName());
-        return "redirect:/admin?demotedSuper";
+        return "redirect:/admin/users?demotedSuper";
     }
 
     @PostMapping("/users/{id}/demote")
@@ -180,13 +184,17 @@ public class AdminController {
         if (demoted != null && demoted.getRole() != UserRole.ADMIN && demoted.getRole() != UserRole.SUPERADMIN) {
             domainAdmins.clearAssignments(demoted);
         }
-        return "redirect:/admin?demoted";
+        return "redirect:/admin/users?demoted";
     }
 
     /** Replace the set of exams this admin user governs. SUPERADMIN-only;
      *  enforced by /admin/users/** path rule in SecurityConfig. The form
      *  posts a list of checked exam slugs as repeated {@code exams} params;
      *  any slug not in the list is removed. */
+    /** Replace the set of exams an ADMIN user governs. Lives under
+     *  /admin/users/** so the existing SUPERADMIN guard applies; the form
+     *  is rendered on /admin/certifications, which is where this redirect
+     *  lands the user on success. */
     @PostMapping("/users/{id}/domain-assignments")
     public String setDomainAssignments(@PathVariable Long id,
                                        @RequestParam(name = "exams", required = false) List<String> exams,
@@ -195,25 +203,24 @@ public class AdminController {
         String byEmail = auth == null ? null : auth.getName();
         domainAdmins.replaceAssignments(id, exams, byEmail);
         flash.addFlashAttribute("adminMessage", "Domain assignments updated.");
-        return "redirect:/admin";
+        return "redirect:/admin/certifications";
     }
 
-    /** Permanent deletion of any user — USER, VERIFIER, or ADMIN. Guarded by
-     *  the service against self-delete and last-admin-delete (those throw
-     *  IllegalStateException → flash banner via the @ExceptionHandler below). */
+    /** Permanent deletion of any user — USER, VERIFIER, ADMIN, or SUPERADMIN
+     *  (the service has self-delete + last-admin guards). */
     @PostMapping("/users/{id}/delete")
     public String deleteUser(@PathVariable Long id, Authentication auth,
                              RedirectAttributes flash) {
         users.deleteUser(id, auth == null ? null : auth.getName());
         flash.addFlashAttribute("adminMessage", "User permanently deleted.");
-        return "redirect:/admin";
+        return "redirect:/admin/users";
     }
 
-    /** Surface promote/demote safety errors (last admin, demote self, etc.) as a
-     *  one-shot flash message on /admin instead of a 500 page. */
+    /** Surface promote/demote safety errors (last admin, demote self, etc.)
+     *  as a one-shot flash message on the user page instead of a 500. */
     @ExceptionHandler({IllegalStateException.class, IllegalArgumentException.class})
     public String onAdminError(RuntimeException exc, RedirectAttributes flash) {
         flash.addFlashAttribute("adminError", exc.getMessage());
-        return "redirect:/admin";
+        return "redirect:/admin/users";
     }
 }

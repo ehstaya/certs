@@ -115,6 +115,9 @@
       if (role === "ADMIN" || role === "SUPERADMIN") {
         document.querySelectorAll(".admin-only").forEach(el => { el.style.display = ""; });
       }
+      if (role === "SUPERADMIN") {
+        document.querySelectorAll(".superadmin-only").forEach(el => { el.style.display = ""; });
+      }
       // Detect a server restart by comparing the bootId returned now against
       // the one we stored on the previous load. Mismatch ⇒ any persisted
       // timer state in localStorage is from a previous server lifetime and
