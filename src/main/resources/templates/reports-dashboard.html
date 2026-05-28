@@ -13,8 +13,8 @@
   <div class="topbar-actions">
     <a class="topbar-link user-link" href="/">Exams</a>
     <a class="topbar-link user-link" href="/my/reports">My reports</a>
-    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
-    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Question review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Admin reports</a>
     <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
     <a class="topbar-link user-link" href="/uploads">Add questions</a>
     <a class="topbar-link" href="/change-password">Change password</a>
@@ -60,6 +60,10 @@
     <a href="/admin/reports/verifier-feedback" th:classappend="${section == 'verifier-feedback'} ? 'active' : ''">
       <span aria-hidden="true">📝</span> Verifier feedback
     </a>
+    <div class="reports-tree-section superadmin-only" style="display:none">Question bank</div>
+    <a class="superadmin-only" style="display:none" href="/admin/reports/bank-progress" th:classappend="${section == 'bank-progress'} ? 'active' : ''">
+      <span aria-hidden="true">🗂️</span> Bank progress
+    </a>
     <!-- Drop additional reports here as we build them. -->
   </aside>
 
@@ -102,6 +106,42 @@
         </div>
       </div>
     </section>
+
+    <h2>Recent activity</h2>
+    <p class="muted" th:if="${scopedToCerts}">Uploads and approvals on the certifications you govern.</p>
+    <p class="muted" th:unless="${scopedToCerts}">Cross-platform uploads and approvals.</p>
+
+    <h3 style="font-size:14px; color: var(--gray-700, #374151); text-transform:uppercase; letter-spacing:.5px; margin: 14px 0 6px;">Recent uploads</h3>
+    <p class="report-empty" th:if="${#lists.isEmpty(recentImports)}">No recent uploads in your scope.</p>
+    <div class="table-scroll" th:unless="${#lists.isEmpty(recentImports)}">
+      <table class="admin-table">
+        <thead><tr><th>When</th><th>Exam</th><th>Imported</th><th>Skipped</th></tr></thead>
+        <tbody>
+          <tr th:each="e : ${recentImports}" th:classappend="${e.allSkipped()} ? 'row-warn' : ''">
+            <td th:text="${#temporals.format(e.occurredAt, 'yyyy-MM-dd HH:mm')}">—</td>
+            <td><code th:text="${e.examSlug}">slug</code></td>
+            <td th:text="${e.imported}">0</td>
+            <td th:text="${e.skipped}">0</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:14px; color: var(--gray-700, #374151); text-transform:uppercase; letter-spacing:.5px; margin: 18px 0 6px;">Recently approved</h3>
+    <p class="report-empty" th:if="${#lists.isEmpty(recentApproved)}">No recent approvals in your scope.</p>
+    <div class="table-scroll" th:unless="${#lists.isEmpty(recentApproved)}">
+      <table class="admin-table">
+        <thead><tr><th>#</th><th>Exam</th><th>Type</th><th>Question</th></tr></thead>
+        <tbody>
+          <tr th:each="q : ${recentApproved}">
+            <td th:text="${q.number}">0</td>
+            <td><code th:text="${q.exam != null ? q.exam.slug : '—'}">slug</code></td>
+            <td th:text="${q.type}">SINGLE</td>
+            <td th:text="${#strings.abbreviate(q.text, 120)}">…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <h2>Vote signal</h2>
     <section class="dashboard-cards">

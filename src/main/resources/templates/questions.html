@@ -48,6 +48,39 @@
       margin-bottom: 12px;
     }
     .q-counts strong { color: var(--gray-900, #111827); }
+
+    /* Bulk action bar that floats above the pending list. The Approve /
+       Reject buttons stay disabled until at least one checkbox is ticked
+       — server-side scoping is still enforced per-id. */
+    .bulk-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      background: var(--gray-50, #f9fafb);
+      border: 1px solid var(--gray-200, #e5e7eb);
+      border-radius: 8px;
+      margin-bottom: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .bulk-bar-select-all { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+    .bulk-bar-select-all input { margin: 0; }
+    .q-select { float: right; margin-left: 8px; }
+    .q-select input { transform: scale(1.2); cursor: pointer; }
+
+    /* Pager strip — same shape as the approved / retired queue pager. */
+    .pager {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      margin: 18px 0 4px;
+      font-size: .9rem;
+    }
+    .pager .btn-disabled { pointer-events: none; opacity: 0.5; }
   </style>
 </head>
 <body>
@@ -56,8 +89,8 @@
   <div class="topbar-actions">
     <a class="topbar-link user-link" href="/">Exams</a>
     <a class="topbar-link user-link" href="/my/reports">My reports</a>
-    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
-    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Question review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Admin reports</a>
     <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
     <a class="topbar-link user-link" href="/uploads">Add questions</a>
     <a class="topbar-link" href="/change-password">Change password</a>
@@ -113,39 +146,79 @@
   <p class="muted" th:if="${param.approved}">Question approved — it's now in the live quiz.</p>
   <p class="muted" th:if="${param.rejected}">Question rejected.</p>
   <p class="muted" th:if="${param.updated}">Question updated.</p>
+  <p class="banner banner-ok" th:if="${bulkMessage}" th:text="${bulkMessage}">bulk message</p>
 
   <section class="admin-section">
     <h2>Pending <span class="count" th:text="'(' + ${pendingCount} + ')'">(0)</span></h2>
     <div class="empty" th:if="${#lists.isEmpty(pending)}">Nothing pending review.</div>
 
-    <div class="q-card" th:each="q : ${pending}">
-      <div class="q-meta">
-        <span class="q-exam-pill" th:if="${q.exam != null}" th:text="${q.exam.name}">Exam name</span>
-        <span>#<span th:text="${q.number}">0</span></span> ·
-        <span th:text="${q.type}">SINGLE</span>
-        <span th:if="${q.sourceUrl != null}"> · source: <a th:href="${q.sourceUrl}" th:text="${q.sourceUrl}" target="_blank" rel="noopener">source</a></span>
-        <span th:if="${q.helpUrl != null and q.helpUrl != ''}"> · help: <a th:href="${q.helpUrl}" target="_blank" rel="noopener">link</a></span>
+    <!-- Bulk action bar — pick any number of questions and Approve / Reject
+         in a single round-trip. Stays hidden until at least one box is
+         checked so the layout doesn't feel cluttered when there's nothing
+         to act on. Per-question scope check is enforced server-side too. -->
+    <form id="bulkForm" method="post" action="/admin/questions/bulk-approve"
+          th:unless="${#lists.isEmpty(pending)}">
+      <div class="bulk-bar">
+        <label class="bulk-bar-select-all">
+          <input type="checkbox" id="bulkSelectAll" />
+          <span>Select all on this page</span>
+        </label>
+        <span id="bulkSelectedCount" class="muted">0 selected</span>
+        <button type="submit" formaction="/admin/questions/bulk-approve"
+                class="btn btn-primary btn-sm" id="bulkApproveBtn" disabled
+                data-confirm-title="Approve selected"
+                data-confirm="Approve every selected question? They'll all move to the live bank."
+                data-confirm-ok="Approve all">Approve selected</button>
+        <button type="submit" formaction="/admin/questions/bulk-reject"
+                class="btn btn-danger btn-sm" id="bulkRejectBtn" disabled
+                data-confirm-title="Reject selected"
+                data-confirm="Reject every selected question? They'll be hidden from the bank."
+                data-confirm-ok="Reject all">Reject selected</button>
       </div>
-      <p class="q-text" th:text="${q.text}">Question text</p>
-      <div class="q-dup-warn" th:if="${q.duplicateOfId != null}">
-        ⚠ Possible duplicate of an existing question (#<span th:text="${q.duplicateOfId}">0</span>).
-        Same text was already in the bank — admin should compare and decide whether to keep this as a variant or reject.
+
+      <div class="q-card" th:each="q : ${pending}">
+        <div class="q-meta">
+          <label class="q-select" title="Select for bulk approve / reject">
+            <input type="checkbox" class="q-checkbox" name="ids" th:value="${q.id}" />
+          </label>
+          <span class="q-exam-pill" th:if="${q.exam != null}" th:text="${q.exam.name}">Exam name</span>
+          <span>#<span th:text="${q.number}">0</span></span> ·
+          <span th:text="${q.type}">SINGLE</span>
+          <span th:if="${q.sourceUrl != null}"> · source: <a th:href="${q.sourceUrl}" th:text="${q.sourceUrl}" target="_blank" rel="noopener">source</a></span>
+          <span th:if="${q.helpUrl != null and q.helpUrl != ''}"> · help: <a th:href="${q.helpUrl}" target="_blank" rel="noopener">link</a></span>
+        </div>
+        <p class="q-text" th:text="${q.text}">Question text</p>
+        <div class="q-dup-warn" th:if="${q.duplicateOfId != null}">
+          ⚠ Possible duplicate of an existing question (#<span th:text="${q.duplicateOfId}">0</span>).
+          Same text was already in the bank — admin should compare and decide whether to keep this as a variant or reject.
+        </div>
+        <ul class="q-choices">
+          <li th:each="c : ${q.choices}" th:classappend="${c.correct} ? 'correct' : ''">
+            <span th:text="${c.label}">A</span>. <span th:text="${c.text}">choice text</span>
+          </li>
+        </ul>
+        <div class="q-expl" th:if="${q.explanation != null and q.explanation != ''}" th:text="${q.explanation}">Explanation</div>
+        <div class="q-actions">
+          <button class="btn btn-primary btn-sm" type="submit"
+                  th:formaction="@{|/admin/questions/${q.id}/approve|}">Approve</button>
+          <a class="btn btn-sm" th:href="@{|/admin/questions/${q.id}/edit|}">Edit</a>
+          <button class="btn btn-danger btn-sm" type="submit"
+                  th:formaction="@{|/admin/questions/${q.id}/reject|}">Reject</button>
+        </div>
       </div>
-      <ul class="q-choices">
-        <li th:each="c : ${q.choices}" th:classappend="${c.correct} ? 'correct' : ''">
-          <span th:text="${c.label}">A</span>. <span th:text="${c.text}">choice text</span>
-        </li>
-      </ul>
-      <div class="q-expl" th:if="${q.explanation != null and q.explanation != ''}" th:text="${q.explanation}">Explanation</div>
-      <div class="q-actions">
-        <form method="post" th:action="@{|/admin/questions/${q.id}/approve|}" style="display:inline">
-          <button class="btn btn-primary btn-sm" type="submit">Approve</button>
-        </form>
-        <a class="btn btn-sm" th:href="@{|/admin/questions/${q.id}/edit|}">Edit</a>
-        <form method="post" th:action="@{|/admin/questions/${q.id}/reject|}" style="display:inline">
-          <button class="btn btn-danger btn-sm" type="submit">Reject</button>
-        </form>
-      </div>
+    </form>
+
+    <!-- Pager — only when there's more than one page. Matches the
+         approved / retired pager pattern so admins navigate identically. -->
+    <div class="pager" th:if="${totalPages > 1}">
+      <a class="btn btn-sm"
+         th:classappend="${page == 0} ? 'btn-disabled' : ''"
+         th:href="@{/admin/questions(page=${page - 1})}">‹ Prev</a>
+      <span class="muted">Page <strong th:text="${page + 1}">1</strong> of <strong th:text="${totalPages}">1</strong>
+        — <span th:text="${totalElements}">0</span> total</span>
+      <a class="btn btn-sm"
+         th:classappend="${page + 1 >= totalPages} ? 'btn-disabled' : ''"
+         th:href="@{/admin/questions(page=${page + 1})}">Next ›</a>
     </div>
   </section>
 
@@ -191,6 +264,45 @@
       </tbody>
     </table>
   </section>
+
+  <script>
+  // Bulk-action UX wiring. Three things to keep in sync:
+  //   1. The Approve / Reject bulk buttons enable only when ≥1 box is ticked.
+  //   2. The "Select all" master checkbox reflects the current selection
+  //      (ticked when all rows are ticked, indeterminate when partial).
+  //   3. A live "N selected" counter so admins know what they're about to act on.
+  (function(){
+    const form = document.getElementById("bulkForm");
+    if (!form) return;
+    const master  = document.getElementById("bulkSelectAll");
+    const counter = document.getElementById("bulkSelectedCount");
+    const approveBtn = document.getElementById("bulkApproveBtn");
+    const rejectBtn  = document.getElementById("bulkRejectBtn");
+
+    function checkboxes() { return form.querySelectorAll(".q-checkbox"); }
+
+    function refresh() {
+      const boxes = checkboxes();
+      const checked = Array.from(boxes).filter(b => b.checked).length;
+      counter.textContent = checked + " selected";
+      approveBtn.disabled = checked === 0;
+      rejectBtn.disabled  = checked === 0;
+      if (master) {
+        master.checked       = checked === boxes.length && boxes.length > 0;
+        master.indeterminate = checked > 0 && checked < boxes.length;
+      }
+    }
+
+    if (master) {
+      master.addEventListener("change", () => {
+        checkboxes().forEach(b => { b.checked = master.checked; });
+        refresh();
+      });
+    }
+    checkboxes().forEach(b => b.addEventListener("change", refresh));
+    refresh();
+  })();
+  </script>
 </main>
 </body>
 </html>

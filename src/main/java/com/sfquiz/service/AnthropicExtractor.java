@@ -113,13 +113,20 @@ public class AnthropicExtractor {
         return "suspicious";
     }
 
+    /** Cap output tokens generously so a PDF that yields ~100 questions
+     *  doesn't get truncated mid-object (4000 was hitting the ceiling and
+     *  the truncated JSON failed to parse, dropping every question on the
+     *  floor). Sonnet 4.6 supports up to 64k output tokens; 16k is roughly
+     *  ~120 questions and still well under the budget per call. */
+    private static final long EXTRACT_MAX_TOKENS = 16_000L;
+
     /** Extract questions from plain text. */
     public List<ImportQuestionRequest> extractFromText(String text, Long uploadId) {
         if (!enabled) return List.of();
         String user = "TEXT:\n" + truncate(text, 24_000);
         MessageCreateParams params = MessageCreateParams.builder()
                 .model(extractModel)
-                .maxTokens(4000L)
+                .maxTokens(EXTRACT_MAX_TOKENS)
                 .system(EXTRACTOR_SYSTEM)
                 .addUserMessage(user)
                 .build();
@@ -147,7 +154,7 @@ public class AnthropicExtractor {
 
         MessageCreateParams params = MessageCreateParams.builder()
                 .model(extractModel)
-                .maxTokens(4000L)
+                .maxTokens(EXTRACT_MAX_TOKENS)
                 .system(EXTRACTOR_SYSTEM)
                 .addUserMessageOfBlockParams(List.of(imageBlock, textBlock))
                 .build();
@@ -201,12 +208,43 @@ public class AnthropicExtractor {
 
     private List<ImportQuestionRequest> parseQuestions(String raw) {
         if (raw == null || raw.isBlank()) return List.of();
+
+        // Pull out the JSON array payload. If Claude was truncated by the
+        // max-tokens cap there may be no closing ']', so fall back to "from
+        // the first '[' to end-of-string" before giving up.
+        String payload;
         Matcher m = JSON_ARRAY.matcher(raw);
-        if (!m.find()) {
-            log.warn("extract: no JSON array found in reply ({} chars)", raw.length());
-            return List.of();
+        if (m.find()) {
+            payload = m.group();
+        } else {
+            int start = raw.indexOf('[');
+            if (start < 0) {
+                log.warn("extract: no JSON array found in reply ({} chars)", raw.length());
+                return List.of();
+            }
+            payload = raw.substring(start);
         }
-        String payload = m.group();
+
+        // First attempt — clean parse.
+        List<ImportQuestionRequest> out = tryParseArray(payload);
+        if (!out.isEmpty()) return out;
+
+        // Salvage path — Claude got cut off mid-object. Truncate to the
+        // last complete object boundary and close the array so we keep
+        // every question that DID make it through before the cap.
+        String salvaged = salvageTruncatedArray(payload);
+        if (salvaged != null) {
+            out = tryParseArray(salvaged);
+            if (!out.isEmpty()) {
+                log.info("extract: salvaged {} questions from truncated reply", out.size());
+                return out;
+            }
+        }
+        log.warn("extract: JSON parse failed and nothing could be salvaged ({} chars)", payload.length());
+        return out;
+    }
+
+    private List<ImportQuestionRequest> tryParseArray(String payload) {
         List<ImportQuestionRequest> out = new ArrayList<>();
         try {
             JsonNode arr = json.readTree(payload);
@@ -215,10 +253,27 @@ public class AnthropicExtractor {
                 ImportQuestionRequest q = nodeToQuestion(node);
                 if (q != null) out.add(q);
             }
-        } catch (Exception e) {
-            log.warn("extract: JSON parse failed: {}", e.getMessage());
+        } catch (Exception ignored) {
+            // Swallow — caller decides whether to attempt salvage.
         }
         return out;
+    }
+
+    /** When Claude's reply is truncated mid-object, find the last '}' that
+     *  was followed by a ',' (i.e. the end of a complete question object
+     *  inside the array), drop everything after it, and append ']' so the
+     *  prefix parses as a valid JSON array. Returns null if no such
+     *  boundary exists (the reply was cut off in the very first object). */
+    private static String salvageTruncatedArray(String payload) {
+        for (int i = payload.length() - 1; i >= 0; i--) {
+            if (payload.charAt(i) != '}') continue;
+            int j = i + 1;
+            while (j < payload.length() && Character.isWhitespace(payload.charAt(j))) j++;
+            if (j < payload.length() && payload.charAt(j) == ',') {
+                return payload.substring(0, i + 1) + "]";
+            }
+        }
+        return null;
     }
 
     private ImportQuestionRequest nodeToQuestion(JsonNode node) {

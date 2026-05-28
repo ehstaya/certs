@@ -42,6 +42,37 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
     @Query("UPDATE Question q SET q.status = ?1 WHERE q.status IS NULL")
     int backfillStatus(Question.Status status);
 
+    /** Bank-progress report: total questions whose createdAt falls in
+     *  [start, end), optionally restricted to a set of exam slugs.
+     *  Legacy/pre-tracking rows (createdAt IS NULL) are excluded. */
+    @Query("SELECT COUNT(q.id) FROM Question q " +
+           "WHERE q.createdAt >= :start AND q.createdAt < :end " +
+           "AND (:scoped = false OR q.exam.slug IN :slugs)")
+    long countUploadedInRange(@Param("start") java.time.Instant start,
+                              @Param("end")   java.time.Instant end,
+                              @Param("scoped") boolean scoped,
+                              @Param("slugs") java.util.Collection<String> slugs);
+
+    /** Per-exam-slug "uploaded in time range" aggregate for the bank-progress report. */
+    @Query("SELECT q.exam.slug, COUNT(q.id) FROM Question q " +
+           "WHERE q.createdAt >= :start AND q.createdAt < :end " +
+           "AND (:scoped = false OR q.exam.slug IN :slugs) " +
+           "GROUP BY q.exam.slug")
+    List<Object[]> uploadedByExamInRange(@Param("start") java.time.Instant start,
+                                         @Param("end")   java.time.Instant end,
+                                         @Param("scoped") boolean scoped,
+                                         @Param("slugs") java.util.Collection<String> slugs);
+
+    /** Per-contributor "uploaded in time range" aggregate. */
+    @Query("SELECT q.createdByEmail, COUNT(q.id) FROM Question q " +
+           "WHERE q.createdAt >= :start AND q.createdAt < :end " +
+           "AND (:scoped = false OR q.exam.slug IN :slugs) " +
+           "GROUP BY q.createdByEmail")
+    List<Object[]> uploadedByCreatorInRange(@Param("start") java.time.Instant start,
+                                            @Param("end")   java.time.Instant end,
+                                            @Param("scoped") boolean scoped,
+                                            @Param("slugs") java.util.Collection<String> slugs);
+
     /** Assign exam-less questions (predating the exam column) to a default exam. */
     @Modifying
     @Query("UPDATE Question q SET q.exam = :exam WHERE q.exam IS NULL")

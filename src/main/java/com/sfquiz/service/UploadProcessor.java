@@ -104,7 +104,16 @@ public class UploadProcessor {
 
         markProcessing(uploadId);
 
-        TextExtractor.Kind kind = TextExtractor.classify(u.getOriginalName());
+        // Pull every scalar we'll need later into locals up-front so we can
+        // drop the entity reference (and its byte[] content) as soon as
+        // possible. On a 512 MB Heroku dyno, keeping a 25 MB PDF pinned in
+        // heap through the 15–30 s Claude call is the difference between
+        // staying under the cap and an R14.
+        String originalName  = u.getOriginalName();
+        String examSlug      = u.getExamSlug();
+        String uploaderEmail = u.getUploadedByEmail();
+
+        TextExtractor.Kind kind = TextExtractor.classify(originalName);
         if (kind == TextExtractor.Kind.UNSUPPORTED) {
             markSkipped(uploadId, "unsupported file extension");
             return;
@@ -113,22 +122,30 @@ public class UploadProcessor {
         List<ImportQuestionRequest> drafts;
         try {
             if (kind == TextExtractor.Kind.IMAGE) {
-                String mime = TextExtractor.imageMime(u.getOriginalName());
-                drafts = anthropic.extractFromImage(u.getContent(), mime, uploadId);
+                String mime = TextExtractor.imageMime(originalName);
+                byte[] bytes = u.getContent();
+                u = null;  // release the entity (and the byte[] held inside it ASAP after the call)
+                drafts = anthropic.extractFromImage(bytes, mime, uploadId);
+                bytes = null;
             } else {
-                String text = texts.extractText(u.getOriginalName(), u.getContent());
+                // Extract text from the bytes, then free the bytes BEFORE the
+                // Claude call so we don't hold both in memory simultaneously.
+                byte[] bytes = u.getContent();
+                u = null;
+                String text = texts.extractText(originalName, bytes);
+                bytes = null;
                 if (text == null || text.isBlank()) {
                     markSkipped(uploadId, "could not extract any text from file");
                     return;
                 }
-                if (u.isDumpCheckOverride()) {
-                    log.warn("upload id={} extracting WITHOUT dump-check (admin override)", uploadId);
-                } else {
-                    String dumpDecision = anthropic.dumpCheck(text, uploadId);
-                    if ("dump".equals(dumpDecision)) {
-                        markSkipped(uploadId, "content flagged as exam dump — refusing to import (admin can override)");
-                        return;
-                    }
+                // Dump-check is now advisory, not blocking. Flag the upload
+                // so the user sees a yellow warning and the admin review queue
+                // shows a "dump-suspected" badge, but let the questions flow
+                // through to the queue — admin makes the final call.
+                String dumpDecision = anthropic.dumpCheck(text, uploadId);
+                if ("dump".equals(dumpDecision)) {
+                    log.warn("upload id={} flagged as possible exam dump — flowing to admin review with warning", uploadId);
+                    markDumpSuspected(uploadId);
                 }
                 drafts = anthropic.extractFromText(text, uploadId);
             }
@@ -143,9 +160,9 @@ public class UploadProcessor {
             return;
         }
 
-        String slug = (u.getExamSlug() == null || u.getExamSlug().isBlank())
+        String slug = (examSlug == null || examSlug.isBlank())
                 ? DEFAULT_EXAM_SLUG
-                : u.getExamSlug();
+                : examSlug;
 
         // Note: explanations are intentionally NOT auto-enriched here. The admin
         // is the first pass — they can write their own explanation while editing
@@ -159,7 +176,7 @@ public class UploadProcessor {
                 null, null, null, null, null,
                 drafts
         );
-        QuestionAdminService.ImportResult result = questions.importExam(req);
+        QuestionAdminService.ImportResult result = questions.importExam(req, uploaderEmail);
         markDone(uploadId, drafts.size(), result.imported());
     }
 
@@ -183,12 +200,14 @@ public class UploadProcessor {
         });
     }
 
-    /** Persist the dump-check-override flag in its own short transaction so
-     *  the subsequent async processAsync() sees the updated row. */
+    /** Stamp the upload row so the user and admin both see a warning that
+     *  this upload was flagged as possible leaked exam content. The
+     *  questions are still extracted and queued — this is advisory only.
+     *  Short tx so the listing page sees the flag as soon as it's set. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void setDumpCheckOverride(Long id, boolean override) {
+    public void markDumpSuspected(Long id) {
         uploads.findById(id).ifPresent(u -> {
-            u.setDumpCheckOverride(override);
+            u.setDumpSuspected(true);
             uploads.save(u);
         });
     }

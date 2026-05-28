@@ -34,22 +34,55 @@ public class QuestionAdminService {
     private final ImportEventRepository importEvents;
     private final ObjectMapper json;
     private final ExplanationEnricher enricher;
+    private final com.sfquiz.repository.QuestionActionRepository questionActions;
 
     public QuestionAdminService(QuestionRepository repo, ExamRepository exams,
                                 ImportEventRepository importEvents, ObjectMapper json,
-                                ExplanationEnricher enricher) {
+                                ExplanationEnricher enricher,
+                                com.sfquiz.repository.QuestionActionRepository questionActions) {
         this.repo = repo;
         this.exams = exams;
         this.importEvents = importEvents;
         this.json = json;
         this.enricher = enricher;
+        this.questionActions = questionActions;
+    }
+
+    /** Append one row to the action log. Cheap, non-blocking — never
+     *  throws even if persistence fails (logs and moves on); the audit
+     *  log is best-effort. */
+    private void logAction(com.sfquiz.entity.Question q,
+                           com.sfquiz.entity.QuestionAction.Action action,
+                           String adminEmail) {
+        try {
+            com.sfquiz.entity.QuestionAction a = new com.sfquiz.entity.QuestionAction();
+            a.setQuestionId(q != null ? q.getId() : null);
+            a.setAdminEmail(adminEmail == null ? "(unknown)" : adminEmail);
+            a.setExamSlug(q != null && q.getExam() != null ? q.getExam().getSlug() : null);
+            a.setAction(action);
+            a.setOccurredAt(java.time.Instant.now());
+            questionActions.save(a);
+        } catch (Exception ex) {
+            log.warn("Failed to log {} on q={} by={}: {}", action,
+                    q == null ? null : q.getId(), adminEmail, ex.getMessage());
+        }
     }
 
     public record ImportResult(int imported, int skipped, List<String> skippedTexts) {}
 
-    /** Upserts the target exam and imports its questions as PENDING for review. */
+    /** Crawler entry-point — imports questions stamped as originating from the
+     *  crawler service account. Use {@link #importExam(ImportExamRequest, String)}
+     *  when an upload path needs to credit the uploader. */
     @Transactional
     public ImportResult importExam(ImportExamRequest req) {
+        return importExam(req, "crawler");
+    }
+
+    /** Upserts the target exam and imports its questions as PENDING for review.
+     *  {@code creatorEmail} is stamped on every new {@link Question} so the
+     *  bank-progress report can credit the originator (uploader, crawler, etc.). */
+    @Transactional
+    public ImportResult importExam(ImportExamRequest req, String creatorEmail) {
         if (req == null || req.slug() == null || req.slug().isBlank()) {
             return new ImportResult(0, 0, List.of("missing exam slug"));
         }
@@ -87,6 +120,8 @@ public class QuestionAdminService {
             q.setExplanation(blankToNull(r.explanation()));
             q.setHelpUrl(blankToNull(r.helpUrl()));
             q.setSourceUrl(blankToNull(r.sourceUrl()));
+            q.setCreatedAt(java.time.Instant.now());
+            q.setCreatedByEmail(creatorEmail);
             // Tag with the existing question's id so the admin sees a warning
             // badge during review. Admin decides whether to keep as a variant
             // (approve) or reject as a true duplicate.
@@ -146,9 +181,24 @@ public class QuestionAdminService {
     }
 
     public List<ImportEventView> recentImportEventViews() {
+        return recentImportEventViewsScoped(null);
+    }
+
+    /** Domain-scoped variant — only events whose exam slug is in
+     *  {@code managedSlugs} survive. Pass {@code null} or a set containing
+     *  the {@code "*"} wildcard to skip the filter (super-admin behavior). */
+    public List<ImportEventView> recentImportEventViewsScoped(Set<String> managedSlugs) {
         List<ImportEvent> rows = recentImportEvents();
+        // Resolve the scope to a non-null set we can safely query each row
+        // against. Null OR a wildcard set means "no filter" -> empty set
+        // here, and we check that case via the `scoped` flag below.
+        Set<String> filter = (managedSlugs == null || managedSlugs.contains("*"))
+                ? Collections.emptySet()
+                : managedSlugs;
+        boolean scoped = !filter.isEmpty();
         List<ImportEventView> out = new ArrayList<>(rows.size());
         for (ImportEvent ev : rows) {
+            if (scoped && !filter.contains(ev.getExamSlug())) continue;
             List<String> texts = List.of();
             try {
                 String s = ev.getSkippedTextsJson();
@@ -190,28 +240,34 @@ public class QuestionAdminService {
         q.setRetiredByEmail(adminEmail);
         q.setRetiredAt(java.time.Instant.now());
         repo.save(q);
+        logAction(q, com.sfquiz.entity.QuestionAction.Action.RETIRE, adminEmail);
     }
 
-    /** Permanent removal — only valid from the retired queue. Cascades to
-     *  delete the question's choices. */
+    /** Permanent removal — cascades to delete the question's choices. The
+     *  QuestionAction event is logged FIRST so the audit row outlives the
+     *  question itself; questionId in the action stays as a bare long that
+     *  no longer dereferences but tells you "row #427 was permanently
+     *  deleted by Jane at this time." */
     @Transactional
-    public void permanentlyDelete(Long id) {
+    public void permanentlyDelete(Long id, String adminEmail) {
         Question q = get(id);
-        log.warn("Permanently deleting question id={} number={} (status={}, retiredBy={})",
-                id, q.getNumber(), q.getStatus(), q.getRetiredByEmail());
+        log.warn("Permanently deleting question id={} number={} (status={}, retiredBy={}) by={}",
+                id, q.getNumber(), q.getStatus(), q.getRetiredByEmail(), adminEmail);
+        logAction(q, com.sfquiz.entity.QuestionAction.Action.PERMANENT_DELETE, adminEmail);
         repo.delete(q);
     }
 
     /** Restore a retired question to the live bank. */
     @Transactional
-    public void restore(Long id) {
+    public void restore(Long id, String adminEmail) {
         Question q = get(id);
-        log.info("Restoring question id={} number={} (was RETIRED, retiredBy={})",
-                id, q.getNumber(), q.getRetiredByEmail());
+        log.info("Restoring question id={} number={} (was RETIRED, retiredBy={}) by={}",
+                id, q.getNumber(), q.getRetiredByEmail(), adminEmail);
         q.setStatus(Question.Status.APPROVED);
         q.setRetiredByEmail(null);
         q.setRetiredAt(null);
         repo.save(q);
+        logAction(q, com.sfquiz.entity.QuestionAction.Action.RESTORE, adminEmail);
     }
 
     public record PagedApproved(List<Question> rows, int page, int totalPages, long totalElements, int pageSize) {}
@@ -262,10 +318,11 @@ public class QuestionAdminService {
     }
 
     @Transactional
-    public void approve(Long id) {
+    public void approve(Long id, String adminEmail) {
         Question q = get(id);
         q.setStatus(Question.Status.APPROVED);
         repo.save(q);
+        logAction(q, com.sfquiz.entity.QuestionAction.Action.APPROVE, adminEmail);
         // Admin is the first pass for explanations. If they approved this
         // question without supplying one, hand it off to Claude to generate
         // one from the vendor's docs in the background — the admin already
@@ -278,8 +335,11 @@ public class QuestionAdminService {
     }
 
     @Transactional
-    public void reject(Long id) {
-        setStatus(id, Question.Status.REJECTED);
+    public void reject(Long id, String adminEmail) {
+        Question q = get(id);
+        q.setStatus(Question.Status.REJECTED);
+        repo.save(q);
+        logAction(q, com.sfquiz.entity.QuestionAction.Action.REJECT, adminEmail);
     }
 
     /** Take an APPROVED question out of the live bank and put it back into
@@ -287,12 +347,13 @@ public class QuestionAdminService {
      *  an admin wants a domain admin to re-validate the question without
      *  retiring it outright. */
     @Transactional
-    public void sendBackToReview(Long id) {
+    public void sendBackToReview(Long id, String adminEmail) {
         Question q = get(id);
         if (q.getStatus() == Question.Status.PENDING) return; // already there
-        log.info("Sending question id={} back to review (was {})", id, q.getStatus());
+        log.info("Sending question id={} back to review (was {}) by={}", id, q.getStatus(), adminEmail);
         q.setStatus(Question.Status.PENDING);
         repo.save(q);
+        logAction(q, com.sfquiz.entity.QuestionAction.Action.SEND_BACK, adminEmail);
     }
 
     public Question get(Long id) {
@@ -369,6 +430,8 @@ public class QuestionAdminService {
         q.setText(text.trim());
         q.setExplanation(blankToNull(explanation));
         q.setHelpUrl(blankToNull(helpUrl));
+        q.setCreatedAt(java.time.Instant.now());
+        q.setCreatedByEmail(creatorEmail);
         // Stamp a sourceUrl-like marker so reviewers see who composed it.
         if (creatorEmail != null && !creatorEmail.isBlank()) {
             q.setSourceUrl("manual:" + creatorEmail);
@@ -389,12 +452,13 @@ public class QuestionAdminService {
         repo.save(q);
         log.info("Manual question created: exam='{}' #{} by={} type={} choices={}",
                 exam.getSlug(), nextNumber, creatorEmail, qType, label);
+        logAction(q, com.sfquiz.entity.QuestionAction.Action.MANUAL_CREATE, creatorEmail);
         return new ManualCreateResult(q.getId(), nextNumber, exam.getSlug());
     }
 
     @Transactional
     public void update(Long id, String type, String text, String explanation, String helpUrl,
-                       List<String> choiceTexts, List<Integer> correctIndexes) {
+                       List<String> choiceTexts, List<Integer> correctIndexes, String adminEmail) {
         Question q = get(id);
         Question.Status priorStatus = q.getStatus();
         q.setType(parseType(type));
@@ -425,10 +489,17 @@ public class QuestionAdminService {
             log.info("Question id={} edit pulled it back to PENDING for re-review", id);
         }
         repo.save(q);
+        logAction(q, com.sfquiz.entity.QuestionAction.Action.EDIT, adminEmail);
     }
 
     public List<Question> pending() {
         return repo.findByStatusOrderByNumber(Question.Status.PENDING);
+    }
+
+    /** Paged + scoped pending list — same shape as {@link PagedApproved}
+     *  so the template can render a consistent pager. */
+    public PagedApproved pendingPageScoped(int page, int pageSize, Set<String> managedSlugs) {
+        return paged(null, Question.Status.PENDING, page, pageSize, managedSlugs);
     }
 
     /** Domain-scoped pending list — drops rows whose exam slug isn't in
@@ -463,18 +534,27 @@ public class QuestionAdminService {
     }
 
     public List<Question> recentApproved(int limit) {
+        return recentApprovedScoped(limit, null);
+    }
+
+    /** Domain-scoped variant — only approved questions whose exam slug is
+     *  in {@code managedSlugs}. Null or wildcard set = no scope filter. */
+    public List<Question> recentApprovedScoped(int limit, Set<String> managedSlugs) {
+        Set<String> filter = (managedSlugs == null || managedSlugs.contains("*"))
+                ? Collections.emptySet()
+                : managedSlugs;
+        boolean scoped = !filter.isEmpty();
         List<Question> approved = new ArrayList<>(repo.findByStatusOrderByNumber(Question.Status.APPROVED));
         Collections.reverse(approved);
+        if (scoped) {
+            approved = approved.stream()
+                    .filter(q -> q.getExam() != null && filter.contains(q.getExam().getSlug()))
+                    .toList();
+        }
         return approved.size() > limit ? approved.subList(0, limit) : approved;
     }
 
     // --- helpers ---------------------------------------------------------------
-
-    private void setStatus(Long id, Question.Status status) {
-        Question q = get(id);
-        q.setStatus(status);
-        repo.save(q);
-    }
 
     private static String validate(ImportQuestionRequest r) {
         if (r == null) return "null entry";

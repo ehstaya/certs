@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My reports — Dashboard</title>
+  <title>My reports — As a domain admin</title>
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="stylesheet" href="/css/reports.css" />
 </head>
@@ -60,70 +60,80 @@
   </aside>
 
   <main class="reports-content">
-    <h1>My dashboard</h1>
-    <p class="muted">Your practice activity across every test you've taken.</p>
+    <h1>My activity as a domain admin</h1>
+    <p class="muted" th:if="${isAdmin}">Counts of questions you approved, rejected, edited, retired, or restored in this date range.</p>
+    <p class="muted" th:unless="${isAdmin}">You don't have a domain admin role — nothing to show here.</p>
+
+    <form method="get" action="/my/reports/as-admin" class="filter-bar">
+      <label>
+        <span>From</span>
+        <input type="date" name="from" th:value="${from}" />
+      </label>
+      <label>
+        <span>To</span>
+        <input type="date" name="to" th:value="${to}" />
+      </label>
+      <div class="filter-actions">
+        <button type="submit" class="btn btn-primary">Apply</button>
+      </div>
+    </form>
 
     <section class="dashboard-cards">
       <div class="dash-card">
-        <div class="dash-card-label">Total attempts</div>
-        <div class="dash-card-value" th:text="${totalAttempts}">0</div>
+        <div class="dash-card-label">Total actions</div>
+        <div class="dash-card-value" th:text="${report.counts().getTotal()}">0</div>
       </div>
       <div class="dash-card">
-        <div class="dash-card-label">Times passed</div>
-        <div class="dash-card-value" style="color: #047857;" th:text="${totalPassed}">0</div>
+        <div class="dash-card-label">Approved</div>
+        <div class="dash-card-value" th:text="${report.counts().getApprove()}">0</div>
       </div>
       <div class="dash-card">
-        <div class="dash-card-label">Avg score (all exams)</div>
-        <div class="dash-card-value">
-          <span th:text="${totalAttempts > 0 ? overallAvgScore + '%' : '—'}">0%</span>
-        </div>
+        <div class="dash-card-label">Rejected</div>
+        <div class="dash-card-value" th:text="${report.counts().getReject()}">0</div>
       </div>
       <div class="dash-card">
-        <div class="dash-card-label">Tests practiced</div>
-        <div class="dash-card-value" th:text="${#lists.size(summary)}">0</div>
+        <div class="dash-card-label">Edited</div>
+        <div class="dash-card-value" th:text="${report.counts().getEdit()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Retired</div>
+        <div class="dash-card-value" th:text="${report.counts().getRetire()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Restored</div>
+        <div class="dash-card-value" th:text="${report.counts().getRestore()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Sent back</div>
+        <div class="dash-card-value" th:text="${report.counts().getSendBack()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Permanently deleted</div>
+        <div class="dash-card-value" th:text="${report.counts().getPermanentDelete()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Manually composed</div>
+        <div class="dash-card-value" th:text="${report.counts().getManualCreate()}">0</div>
       </div>
     </section>
 
-    <h2>Per-test summary</h2>
-    <div class="empty" th:if="${#lists.isEmpty(summary)}">No test attempts recorded yet. Take a test from the
-      <a href="/">Exams page</a> and finish it to see your stats here.</div>
-    <table class="admin-table" th:unless="${#lists.isEmpty(summary)}">
-      <thead><tr><th>Exam</th><th>Attempts</th><th>Avg score</th><th>Best</th><th>Pass threshold</th><th>Passed</th><th>Open</th></tr></thead>
-      <tbody>
-        <tr th:each="s : ${summary}">
-          <td th:text="${s.name}">Exam name</td>
-          <td th:text="${s.attempts}">0</td>
-          <td>
-            <span th:classappend="${s.averageScore >= s.passingScorePercent} ? 'pct-pill good' : 'pct-pill bad'"
-                  th:text="${s.averageScore + '%'}">0%</span>
-          </td>
-          <td th:text="${s.bestScore + '%'}">0%</td>
-          <td th:text="${s.passingScorePercent + '%'}">65%</td>
-          <td th:text="${s.passed + ' / ' + s.attempts}">0 / 0</td>
-          <td>
-            <a class="btn btn-sm" th:href="@{/my/reports/per-test(exam=${s.slug})}">Details</a>
-            <a class="btn btn-sm" th:href="@{/my/reports/trend(exam=${s.slug})}">Trend</a>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h2>Recent attempts</h2>
-    <table class="admin-table" th:unless="${#lists.isEmpty(recent)}">
-      <thead><tr><th>When</th><th>Exam</th><th>Score</th><th>Result</th><th>Time</th></tr></thead>
-      <tbody>
-        <tr th:each="a : ${recent}">
-          <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
-          <td th:text="${a.exam.name}">Exam</td>
-          <td th:text="${a.scorePercent + '%'}">0%</td>
-          <td>
-            <span th:classappend="${a.passed} ? 'pct-pill good' : 'pct-pill bad'"
-                  th:text="${a.passed} ? 'PASS' : 'FAIL'">FAIL</span>
-          </td>
-          <td th:text="${(a.durationSeconds / 60) + 'm ' + (a.durationSeconds % 60) + 's'}">—</td>
-        </tr>
-      </tbody>
-    </table>
+    <h2>Recent actions</h2>
+    <p class="report-empty" th:if="${#lists.isEmpty(report.recent())}">No actions in this date range.</p>
+    <div class="table-scroll" th:unless="${#lists.isEmpty(report.recent())}">
+      <table class="admin-table">
+        <thead>
+          <tr><th>When</th><th>Action</th><th>Question</th><th>Cert</th></tr>
+        </thead>
+        <tbody>
+          <tr th:each="a : ${report.recent()}">
+            <td th:text="${#temporals.format(a.occurredAt, 'yyyy-MM-dd HH:mm')}">2026-05-25 09:30</td>
+            <td th:text="${a.action}">APPROVE</td>
+            <td th:text="${'#' + a.questionId}">#0</td>
+            <td th:text="${a.examSlug != null ? a.examSlug : '—'}">slug</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </main>
 </div>
 </body>

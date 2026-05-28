@@ -1,0 +1,1 @@
+web: MALLOC_ARENA_MAX=2 java -Xms96m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+UseSerialGC -XX:ActiveProcessorCount=1 -XX:+ExitOnOutOfMemoryError -jar target/sf-quiz-app-1.0.0.jar

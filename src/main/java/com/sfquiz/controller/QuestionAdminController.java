@@ -72,14 +72,20 @@ public class QuestionAdminController {
     }
 
     @GetMapping
-    public String review(Authentication auth, Model model) {
+    public String review(@RequestParam(name = "page", defaultValue = "0") int page,
+                         Authentication auth, Model model) {
         Set<String> mine = managed(auth);
-        model.addAttribute("pending", questions.pendingScoped(mine));
+        QuestionAdminService.PagedApproved pg = questions.pendingPageScoped(page, 20, mine);
+        model.addAttribute("pending", pg.rows());
+        model.addAttribute("page", pg.page());
+        model.addAttribute("totalPages", pg.totalPages());
+        model.addAttribute("totalElements", pg.totalElements());
+        model.addAttribute("pageSize", pg.pageSize());
         model.addAttribute("pendingCount", questions.pendingCountScoped(mine));
         model.addAttribute("approvedCount", questions.approvedCountScoped(mine));
         model.addAttribute("retiredCount", questions.retiredCountScoped(mine));
-        model.addAttribute("recentApproved", questions.recentApproved(10));
-        model.addAttribute("recentImports", questions.recentImportEventViews());
+        model.addAttribute("recentApproved", questions.recentApprovedScoped(10, mine));
+        model.addAttribute("recentImports", questions.recentImportEventViewsScoped(mine));
         model.addAttribute("managedSlugs", mine);
         model.addAttribute("isSuperAdmin", AuthorizationService.managesAllExams(mine));
         return "questions";
@@ -103,9 +109,17 @@ public class QuestionAdminController {
 
     /** Maintenance page — separates the heavy admin-only operations
      *  (topic classification, explanation backfill) from the day-to-day
-     *  question review queue so it stays focused. */
+     *  question review queue so it stays focused. Only renders action
+     *  buttons for the certs the caller actually governs; super admins
+     *  see every active cert. */
     @GetMapping("/maintenance")
-    public String maintenance() {
+    public String maintenance(Authentication auth, Model model) {
+        Set<String> mine = managed(auth);
+        List<com.sfquiz.dto.ExamDto> allActive = examService.listActive();
+        List<com.sfquiz.dto.ExamDto> manageable = AuthorizationService.managesAllExams(mine)
+                ? allActive
+                : allActive.stream().filter(e -> mine.contains(e.slug())).toList();
+        model.addAttribute("manageableExams", manageable);
         return "question-maintenance";
     }
 
@@ -140,7 +154,7 @@ public class QuestionAdminController {
     public String approve(@PathVariable Long id, Authentication auth) {
         Question q = questions.get(id);
         requireCanManage(auth, q);
-        questions.approve(id);
+        questions.approve(id, auth == null ? null : auth.getName());
         return "redirect:/admin/questions?approved";
     }
 
@@ -148,8 +162,61 @@ public class QuestionAdminController {
     public String reject(@PathVariable Long id, Authentication auth) {
         Question q = questions.get(id);
         requireCanManage(auth, q);
-        questions.reject(id);
+        questions.reject(id, auth == null ? null : auth.getName());
         return "redirect:/admin/questions?rejected";
+    }
+
+    /** Bulk approve / reject — drains the selected pending questions in a
+     *  single round-trip from the review page. Each id is independently
+     *  scope-checked against the caller's managed certs so a domain admin
+     *  who governs only cert A can't accidentally (or via crafted form
+     *  POST) act on questions for cert B. Unknown ids are silently
+     *  skipped — they may have been deleted between page load and submit. */
+    @PostMapping("/bulk-approve")
+    public String bulkApprove(@RequestParam(name = "ids", required = false) List<Long> ids,
+                              Authentication auth,
+                              RedirectAttributes flash) {
+        int approved = doBulkAction(ids, auth, /*approve=*/ true);
+        flash.addFlashAttribute("bulkMessage",
+                approved == 0 ? "No questions were approved (selection was empty or out of scope)."
+                              : "Approved " + approved + " question" + (approved == 1 ? "" : "s") + ".");
+        return "redirect:/admin/questions";
+    }
+
+    @PostMapping("/bulk-reject")
+    public String bulkReject(@RequestParam(name = "ids", required = false) List<Long> ids,
+                             Authentication auth,
+                             RedirectAttributes flash) {
+        int rejected = doBulkAction(ids, auth, /*approve=*/ false);
+        flash.addFlashAttribute("bulkMessage",
+                rejected == 0 ? "No questions were rejected (selection was empty or out of scope)."
+                              : "Rejected " + rejected + " question" + (rejected == 1 ? "" : "s") + ".");
+        return "redirect:/admin/questions";
+    }
+
+    /** Shared bulk-action loop — returns the number of ids that actually
+     *  applied. Skips silently on missing rows and on rows the caller
+     *  doesn't govern (defense in depth — the UI only renders checkboxes
+     *  for in-scope rows, but a hand-crafted POST could include others). */
+    private int doBulkAction(List<Long> ids, Authentication auth, boolean approve) {
+        if (ids == null || ids.isEmpty()) return 0;
+        User caller = authz.currentUser(auth).orElse(null);
+        String adminEmail = auth == null ? null : auth.getName();
+        int count = 0;
+        for (Long id : ids) {
+            if (id == null) continue;
+            Question q;
+            try {
+                q = questions.get(id);
+            } catch (IllegalArgumentException notFound) {
+                continue;
+            }
+            if (!authz.canManageQuestion(caller, q)) continue;
+            if (approve) questions.approve(id, adminEmail);
+            else         questions.reject(id, adminEmail);
+            count++;
+        }
+        return count;
     }
 
     @GetMapping("/{id}/edit")
@@ -217,7 +284,7 @@ public class QuestionAdminController {
                            RedirectAttributes flash) {
         Question q = questions.get(id);
         requireCanManage(auth, q);
-        questions.sendBackToReview(id);
+        questions.sendBackToReview(id, auth == null ? null : auth.getName());
         flash.addFlashAttribute("sentBackId", id);
         if (returnTo != null && returnTo.startsWith("/admin/")) {
             return "redirect:" + returnTo;
@@ -232,7 +299,7 @@ public class QuestionAdminController {
                           RedirectAttributes flash) {
         Question q = questions.get(id);
         requireCanManage(auth, q);
-        questions.restore(id);
+        questions.restore(id, auth == null ? null : auth.getName());
         flash.addFlashAttribute("restoredId", id);
         return "redirect:/admin/questions/retired";
     }
@@ -244,7 +311,7 @@ public class QuestionAdminController {
                                     RedirectAttributes flash) {
         Question q = questions.get(id);
         requireCanManage(auth, q);
-        questions.permanentlyDelete(id);
+        questions.permanentlyDelete(id, auth == null ? null : auth.getName());
         flash.addFlashAttribute("permanentlyDeletedId", id);
         return "redirect:/admin/questions/retired";
     }
@@ -285,13 +352,14 @@ public class QuestionAdminController {
                        Authentication auth) {
         Question q = questions.get(id);
         requireCanManage(auth, q);
-        questions.update(id, type, text, explanation, helpUrl, choiceText, correct);
+        String adminEmail = auth == null ? null : auth.getName();
+        questions.update(id, type, text, explanation, helpUrl, choiceText, correct, adminEmail);
         if ("save-approve".equalsIgnoreCase(action)) {
-            questions.approve(id);
+            questions.approve(id, adminEmail);
             return "redirect:/admin/questions?approved";
         }
         if ("save-restore".equalsIgnoreCase(action)) {
-            questions.restore(id);
+            questions.restore(id, adminEmail);
             return "redirect:/admin/questions/retired?updated";
         }
         return "redirect:/admin/questions?updated";

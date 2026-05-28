@@ -97,7 +97,80 @@
     .pill.done       { background: var(--green-100, #d1fae5); color: var(--green-800, #065f46); }
     .pill.failed     { background: var(--red-100, #fee2e2); color: var(--red-800, #991b1b); }
     .pill.skipped    { background: #f3f4f6; color: #4b5563; }
+    .pill.dump       { background: #fef3c7; color: #92400e; margin-left: 6px; }
     .row-error { color: var(--red-800, #991b1b); font-size: .8rem; margin-top: 4px; }
+
+    /* Drag-drop / paste zone — the primary upload entry point for end users.
+       Big, dashed border, clear "drop or paste" affordance. */
+    .drop-zone {
+      position: relative;
+      border: 2px dashed var(--brand-primary, #0176D3);
+      background: var(--brand-tint, #EAF5FE);
+      border-radius: 10px;
+      padding: 28px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: background-color .12s ease, border-color .12s ease, transform .04s ease;
+      margin-bottom: 14px;
+    }
+    .drop-zone:hover { background: #dbeafe; }
+    .drop-zone.is-dragover {
+      background: #bfdbfe;
+      border-color: var(--brand-navy, #032D60);
+      transform: scale(1.01);
+    }
+    .drop-zone .dz-icon {
+      font-size: 32px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+    .drop-zone .dz-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--brand-navy, #032D60);
+      margin-bottom: 4px;
+    }
+    .drop-zone .dz-sub {
+      color: var(--gray-700, #374151);
+      font-size: .9rem;
+      line-height: 1.45;
+    }
+    .drop-zone .dz-sub kbd {
+      display: inline-block;
+      padding: 1px 6px;
+      border: 1px solid var(--gray-300, #d1d5db);
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      background: #fff;
+      font: 600 .8rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--gray-800, #1f2937);
+    }
+    .drop-zone .dz-files {
+      margin-top: 10px;
+      font-size: .85rem;
+      color: var(--gray-700, #374151);
+      text-align: left;
+      max-height: 80px;
+      overflow-y: auto;
+    }
+    .drop-zone .dz-files .dz-file { padding: 2px 0; }
+    .drop-zone[aria-disabled="true"] {
+      opacity: 0.55;
+      cursor: not-allowed;
+      border-style: solid;
+      background: var(--gray-100, #f3f4f6);
+      border-color: var(--gray-300, #d1d5db);
+    }
+    /* Hide the native file input — the drop zone is the visible surface. */
+    .drop-zone-input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .drop-zone[aria-disabled="true"] .drop-zone-input { pointer-events: none; }
   </style>
 </head>
 <body>
@@ -106,8 +179,8 @@
   <div class="topbar-actions">
     <a class="topbar-link user-link" href="/">Exams</a>
     <a class="topbar-link user-link" href="/my/reports">My reports</a>
-    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
-    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Question review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Admin reports</a>
     <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
     <a class="topbar-link" href="/change-password">Change password</a>
     <span class="topbar-user" id="userBadge"></span>
@@ -168,7 +241,6 @@
   <p class="muted" th:if="${retriedId != null}">
     Re-queued upload #<span th:text="${retriedId}">0</span> for extraction.
   </p>
-  <p class="banner banner-info" th:if="${overrideMessage}" th:text="${overrideMessage}">override message</p>
   <p class="muted unsupported" th:if="${rejected != null and not #lists.isEmpty(rejected)}">
     Rejected:
     <span th:each="r, it : ${rejected}">
@@ -187,7 +259,7 @@
   <section class="admin-section">
     <h2>Upload a file</h2>
     <p class="muted">Pick the test first, then drop a screenshot, PDF, or text/markdown/HTML file. Claude extracts the questions and they wait for admin approval.</p>
-    <form method="post" action="/uploads" enctype="multipart/form-data" class="upload-form gated-by-exam">
+    <form method="post" action="/uploads" enctype="multipart/form-data" class="upload-form gated-by-exam" style="flex-direction:column; align-items:stretch; gap:14px;">
       <label class="upload-label">
         <span>Test this is for *</span>
         <select name="examSlug" required>
@@ -195,15 +267,43 @@
           <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}">Exam</option>
         </select>
       </label>
-      <label class="upload-label upload-label-file">
+
+      <!-- Big drop / paste zone — hidden for super admins (they don't use the
+           uploader flow). For everyone else this is the primary entry point;
+           the native <input type="file"> is overlaid invisibly so a click on
+           the zone opens the file picker, drops fill the input, and paste of
+           a clipboard screenshot (⌘V / Ctrl+V) does the same. -->
+      <div class="drop-zone" id="dropZone" aria-disabled="true"
+           sec:authorize="!hasRole('SUPERADMIN')"
+           role="button" tabindex="0"
+           aria-label="Drop files here, paste from clipboard, or click to choose">
+        <div class="dz-icon" aria-hidden="true">📎</div>
+        <div class="dz-title">Drag &amp; drop a screenshot or PDF here</div>
+        <div class="dz-sub">
+          …or paste a screenshot from your clipboard
+          (<kbd id="dzKbdMod">⌘</kbd> + <kbd>V</kbd>)
+          — or click anywhere in this box to pick a file.
+        </div>
+        <input type="file" name="file" id="dropZoneInput" class="drop-zone-input" multiple required disabled
+               accept=".txt,.md,.markdown,.html,.htm,.pdf,.png,.jpg,.jpeg,.gif,.webp,text/plain,text/markdown,text/html,application/pdf,image/png,image/jpeg,image/gif,image/webp"
+               aria-describedby="dropZoneFiles" />
+        <div id="dropZoneFiles" class="dz-files" aria-live="polite"></div>
+      </div>
+
+      <!-- Fallback for super admins (or any browser where the drop zone is
+           hidden) — plain file picker so the form still works. -->
+      <label class="upload-label upload-label-file" sec:authorize="hasRole('SUPERADMIN')">
         <span>File(s) *</span>
         <input type="file" name="file" multiple required disabled
                accept=".txt,.md,.markdown,.html,.htm,.pdf,.png,.jpg,.jpeg,.gif,.webp,text/plain,text/markdown,text/html,application/pdf,image/png,image/jpeg,image/gif,image/webp" />
       </label>
-      <button class="btn btn-primary" type="submit" disabled>Upload</button>
-      <button class="btn btn-sm reset-form-btn" type="button" style="display:none"
-              title="Clear this form so you can use the other option instead">Clear &amp; switch</button>
-      <span class="gate-hint">Pick a test first.</span>
+
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button class="btn btn-primary" type="submit" disabled>Upload</button>
+        <button class="btn btn-sm reset-form-btn" type="button" style="display:none"
+                title="Clear this form so you can use the other option instead">Clear &amp; switch</button>
+        <span class="gate-hint">Pick a test first.</span>
+      </div>
     </form>
   </section>
 
@@ -326,6 +426,133 @@
   })();
   </script>
 
+  <script>
+  // Drag-and-drop + clipboard-paste wiring for the upload drop zone.
+  // Only runs when #dropZone is present (super admins don't see it).
+  (function () {
+    const zone   = document.getElementById('dropZone');
+    const input  = document.getElementById('dropZoneInput');
+    const listEl = document.getElementById('dropZoneFiles');
+    const kbdMod = document.getElementById('dzKbdMod');
+    if (!zone || !input) return;
+
+    // Show "Ctrl" on non-Mac platforms.
+    if (kbdMod && navigator && navigator.platform && !/Mac|iPhone|iPad|iPod/i.test(navigator.platform)) {
+      kbdMod.textContent = 'Ctrl';
+    }
+
+    // The exam-select gating logic in the upload form disables/enables the
+    // input. Reflect that state on the drop zone so users see when it's live.
+    const examSelect = zone.closest('form').querySelector('select[name="examSlug"]');
+    function syncEnabled() {
+      const disabled = !!input.disabled;
+      zone.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    }
+    new MutationObserver(syncEnabled).observe(input, { attributes: true, attributeFilter: ['disabled'] });
+    syncEnabled();
+
+    // Render the picked file list inside the zone so users see what's queued.
+    function renderFileList() {
+      listEl.innerHTML = '';
+      const files = input.files;
+      if (!files || files.length === 0) return;
+      for (let i = 0; i < files.length; i++) {
+        const div = document.createElement('div');
+        div.className = 'dz-file';
+        const f = files[i];
+        const kb = (f.size / 1024).toFixed(1);
+        div.textContent = '📄 ' + f.name + ' (' + kb + ' KB)';
+        listEl.appendChild(div);
+      }
+    }
+    input.addEventListener('change', renderFileList);
+
+    // Replace input.files with the provided FileList (DataTransfer trick).
+    function setFiles(files) {
+      if (!files || files.length === 0) return;
+      const dt = new DataTransfer();
+      for (let i = 0; i < files.length; i++) dt.items.add(files[i]);
+      input.files = dt.files;
+      // Fire a synthetic change so the form-gating logic re-evaluates.
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // ---- Drag & drop ----------------------------------------------------
+    ['dragenter','dragover'].forEach(ev => {
+      zone.addEventListener(ev, e => {
+        if (input.disabled) return;
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.add('is-dragover');
+      });
+    });
+    ['dragleave','dragend','drop'].forEach(ev => {
+      zone.addEventListener(ev, e => {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.remove('is-dragover');
+      });
+    });
+    zone.addEventListener('drop', e => {
+      if (input.disabled) return;
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) setFiles(files);
+    });
+
+    // ---- Keyboard activation on the zone -------------------------------
+    zone.addEventListener('keydown', e => {
+      if (input.disabled) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        input.click();
+      }
+    });
+
+    // ---- Clipboard paste (page-wide while this drop zone is enabled) ----
+    // When the user does ⌘V / Ctrl+V anywhere on the page, look for an
+    // image in the clipboard and route it into the file input. We name the
+    // synthesized file based on its mime type since clipboard images
+    // arrive without a filename.
+    document.addEventListener('paste', e => {
+      if (input.disabled) return;
+      const cd = e.clipboardData || window.clipboardData;
+      if (!cd) return;
+      const out = [];
+      // Prefer items (modern browsers); fall back to files for older ones.
+      if (cd.items && cd.items.length) {
+        for (let i = 0; i < cd.items.length; i++) {
+          const it = cd.items[i];
+          if (it.kind === 'file') {
+            const f = it.getAsFile();
+            if (f) out.push(maybeRenameClipboardImage(f));
+          }
+        }
+      } else if (cd.files && cd.files.length) {
+        for (let i = 0; i < cd.files.length; i++) out.push(cd.files[i]);
+      }
+      if (out.length) {
+        e.preventDefault();
+        setFiles(out);
+        zone.classList.add('is-dragover');
+        setTimeout(() => zone.classList.remove('is-dragover'), 280);
+      }
+    });
+
+    // Clipboard screenshots arrive as e.g. "image.png" with no clue about
+    // what they show; stamp them with the timestamp so a user pasting
+    // multiple can still tell them apart in the file list / on disk.
+    function maybeRenameClipboardImage(f) {
+      if (!f || !f.type || !f.type.startsWith('image/')) return f;
+      const ext = (f.type.split('/')[1] || 'png').toLowerCase();
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T','_').slice(0,19);
+      const name = 'clipboard-' + ts + '.' + ext;
+      try {
+        return new File([f], name, { type: f.type, lastModified: Date.now() });
+      } catch (err) {
+        return f; // Fallback if File constructor isn't available
+      }
+    }
+  })();
+  </script>
+
   <section class="admin-section" id="filesSection" th:attr="data-is-admin=${isAdmin}">
     <h2>Files <span class="count" id="filesCount" th:text="'(' + ${#lists.size(uploads)} + ')'">(0)</span>
       <span id="livePill" class="live-pill" title="Auto-updating every few seconds — no refresh needed">● live</span></h2>
@@ -350,6 +577,8 @@
               <span th:case="'FAILED'"     class="pill failed">Failed</span>
               <span th:case="'SKIPPED'"    class="pill skipped">Skipped</span>
             </span>
+            <span th:if="${u.dumpSuspected}" class="pill dump"
+                  title="Claude flagged this as possible leaked exam content. Questions still flowed through to the admin review queue — admin will give them extra scrutiny.">⚠ Possible dump</span>
           </td>
           <td>
             <span th:if="${u.questionsImported != null}">
@@ -363,17 +592,6 @@
             <form method="post" th:action="@{|/uploads/${u.id}/retry|}" style="display:inline"
                   th:if="${u.status.name() == 'FAILED' or u.status.name() == 'SKIPPED'}">
               <button class="btn btn-sm" type="submit">Retry</button>
-            </form>
-            <form method="post" th:action="@{|/uploads/${u.id}/override-dump-check|}" style="display:inline"
-                  sec:authorize="hasRole('ADMIN')"
-                  th:if="${u.status.name() == 'SKIPPED' and u.error != null and #strings.contains(u.error, 'dump')}">
-              <button class="btn btn-warning btn-sm" type="submit"
-                      title="Skip the leaked-content check and force-extract anyway."
-                      data-confirm-title="Override dump-check"
-                      data-confirm="Claude flagged this file as possibly leaked/paid real-exam content. Overriding will run extraction anyway and add the resulting questions as PENDING for your review.&#10;&#10;Only do this if you are certain the material is legitimately written practice content. You are accountable for what enters the question bank."
-                      data-confirm-ok="Override and extract">
-                Override (allow dump)
-              </button>
             </form>
             <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
               <button class="btn btn-danger btn-sm" type="submit">Delete</button>
@@ -434,16 +652,15 @@
         html += '<form method="post" action="/uploads/' + r.id + '/retry" style="display:inline">' +
                 '<button class="btn btn-sm" type="submit">Retry</button></form> ';
       }
-      if (isAdmin && r.status === "SKIPPED" && r.error && r.error.indexOf("dump") !== -1) {
-        html += '<form method="post" action="/uploads/' + r.id + '/override-dump-check" style="display:inline">' +
-                '<button class="btn btn-warning btn-sm" type="submit"' +
-                ' data-confirm-title="Override dump-check"' +
-                ' data-confirm="Claude flagged this file as possibly leaked/paid real-exam content. Overriding will run extraction anyway and add the resulting questions as PENDING for your review.&#10;&#10;Only do this if you are certain the material is legitimately written practice content. You are accountable for what enters the question bank."' +
-                ' data-confirm-ok="Override and extract">' +
-                'Override (allow dump)</button></form> ';
-      }
       html += '<form method="post" action="/uploads/' + r.id + '/delete" style="display:inline">' +
               '<button class="btn btn-danger btn-sm" type="submit">Delete</button></form>';
+      return html;
+    }
+    function statusCell(r) {
+      let html = statusPill(r.status);
+      if (r.dumpSuspected) {
+        html += ' <span class="pill dump" title="Claude flagged this as possible leaked exam content. Questions still flowed through to the admin review queue — admin will give them extra scrutiny.">⚠ Possible dump</span>';
+      }
       return html;
     }
     function render(rows) {
@@ -463,7 +680,7 @@
           '<td>' + fmtSize(r.sizeBytes) + '</td>' +
           '<td>' + fmtTime(r.uploadedAt) + '</td>' +
           (isAdmin ? '<td>' + esc(r.uploadedByEmail || "—") + '</td>' : '') +
-          '<td>' + statusPill(r.status) + '</td>' +
+          '<td>' + statusCell(r) + '</td>' +
           '<td>' + questionsCell(r) + '</td>' +
           '<td class="actions-col">' + actionsCell(r) + '</td>' +
         '</tr>';

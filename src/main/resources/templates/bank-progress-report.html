@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports — Question bank progress</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/reports.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link user-link" href="/">Exams</a>
+    <a class="topbar-link user-link" href="/my/reports">My reports</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Question review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Admin reports</a>
+    <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
+    <a class="topbar-link user-link" href="/uploads">Add questions</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".superadmin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".user-link").forEach(e=>e.style.display="none");}
+  });
+})();
+</script>
+
+<div class="reports-layout">
+  <aside class="reports-tree" aria-label="Reports navigation">
+    <div class="reports-tree-section">Reports</div>
+    <a href="/admin/reports" th:classappend="${section == 'dashboard'} ? 'active' : ''">
+      <span aria-hidden="true">📊</span> Dashboard
+    </a>
+    <div class="reports-tree-section">People</div>
+    <a href="/admin/reports/scores" th:classappend="${section == 'scores'} ? 'active' : ''">
+      <span aria-hidden="true">🎯</span> All-user scores
+    </a>
+    <div class="reports-tree-section">Performance</div>
+    <a href="/admin/reports/cert-trend" th:classappend="${section == 'cert-trend'} ? 'active' : ''">
+      <span aria-hidden="true">📈</span> Cert score trend
+    </a>
+    <div class="reports-tree-section">Quality</div>
+    <a href="/admin/reports/quality" th:classappend="${section == 'quality'} ? 'active' : ''">
+      <span aria-hidden="true">👍</span> Question quality
+    </a>
+    <a href="/admin/reports/verifier-feedback" th:classappend="${section == 'verifier-feedback'} ? 'active' : ''">
+      <span aria-hidden="true">📝</span> Verifier feedback
+    </a>
+    <div class="reports-tree-section superadmin-only" style="display:none">Question bank</div>
+    <a class="superadmin-only" style="display:none" href="/admin/reports/bank-progress" th:classappend="${section == 'bank-progress'} ? 'active' : ''">
+      <span aria-hidden="true">🗂️</span> Bank progress
+    </a>
+  </aside>
+
+  <main class="reports-content">
+    <h1>Question bank progress</h1>
+    <p class="muted" th:if="${scopedToCerts}">Scoped to the certifications you govern.</p>
+    <p class="muted" th:unless="${scopedToCerts}">Cross-platform — every active certification.</p>
+
+    <form method="get" action="/admin/reports/bank-progress" class="filter-bar">
+      <label>
+        <span>From</span>
+        <input type="date" name="from" th:value="${from}" />
+      </label>
+      <label>
+        <span>To</span>
+        <input type="date" name="to" th:value="${to}" />
+      </label>
+      <label>
+        <span>Certification</span>
+        <select name="exam">
+          <option value="">— All —</option>
+          <option th:each="e : ${exams}" th:value="${e.slug()}" th:text="${e.name()}"
+                  th:selected="${exam == e.slug()}">Exam</option>
+        </select>
+      </label>
+      <label>
+        <span>Domain admin</span>
+        <select name="adminEmail">
+          <option value="">— All admins —</option>
+          <option th:each="a : ${adminOptions}" th:value="${a}" th:text="${a}"
+                  th:selected="${adminEmail == a}">someone@example.com</option>
+        </select>
+      </label>
+      <div class="filter-actions">
+        <button type="submit" class="btn btn-primary">Apply</button>
+      </div>
+    </form>
+
+    <!-- Top cards — one consistent label phrasing, one number, one short
+         foot line. Same shape as the other report dashboards. -->
+    <section class="dashboard-cards">
+      <div class="dash-card">
+        <div class="dash-card-label">Uploaded in range</div>
+        <div class="dash-card-value" th:text="${report.uploadedTotal()}">0</div>
+        <div class="dash-card-foot">Across every cert in scope</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Approved</div>
+        <div class="dash-card-value" th:text="${report.totals().getApprove()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Rejected</div>
+        <div class="dash-card-value" th:text="${report.totals().getReject()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Edited</div>
+        <div class="dash-card-value" th:text="${report.totals().getEdit()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Retired</div>
+        <div class="dash-card-value" th:text="${report.totals().getRetire()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Permanently deleted</div>
+        <div class="dash-card-value" th:text="${report.totals().getPermanentDelete()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Sent back</div>
+        <div class="dash-card-value" th:text="${report.totals().getSendBack()}">0</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Manually composed</div>
+        <div class="dash-card-value" th:text="${report.totals().getManualCreate()}">0</div>
+      </div>
+    </section>
+
+    <!-- Per-domain-admin breakdown -->
+    <h2>By domain admin</h2>
+    <p class="report-empty" th:if="${#lists.isEmpty(report.perAdmin())}">No admin activity in this range.</p>
+    <div class="table-scroll" th:unless="${#lists.isEmpty(report.perAdmin())}">
+      <table class="admin-table numeric-grid">
+        <thead>
+          <tr>
+            <th>Admin</th>
+            <th style="text-align:left">Role</th>
+            <th style="text-align:left">Area (certs)</th>
+            <th>Approved</th>
+            <th>Rejected</th>
+            <th>Edited</th>
+            <th>Retired</th>
+            <th>Restored</th>
+            <th>Sent back</th>
+            <th>Perm. deleted</th>
+            <th>Manual</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="r : ${report.perAdmin()}">
+            <td>
+              <div th:text="${r.displayName()}">Full Name</div>
+              <div class="muted" style="font-size:.8rem" th:text="${r.adminEmail()}">admin@example.com</div>
+            </td>
+            <td style="text-align:left" th:text="${r.roleLabel()}">ADMIN</td>
+            <td style="text-align:left" th:text="${r.area()}">aws-saa</td>
+            <td th:text="${r.counts().getApprove()}">0</td>
+            <td th:text="${r.counts().getReject()}">0</td>
+            <td th:text="${r.counts().getEdit()}">0</td>
+            <td th:text="${r.counts().getRetire()}">0</td>
+            <td th:text="${r.counts().getRestore()}">0</td>
+            <td th:text="${r.counts().getSendBack()}">0</td>
+            <td th:text="${r.counts().getPermanentDelete()}">0</td>
+            <td th:text="${r.counts().getManualCreate()}">0</td>
+            <td><strong th:text="${r.counts().getTotal()}">0</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Per-cert breakdown -->
+    <h2>By certification</h2>
+    <p class="report-empty" th:if="${#lists.isEmpty(report.perCert())}">No activity or uploads in this range.</p>
+    <div class="table-scroll" th:unless="${#lists.isEmpty(report.perCert())}">
+      <table class="admin-table numeric-grid">
+        <thead>
+          <tr>
+            <th>Certification</th>
+            <th>Uploaded</th>
+            <th>Approved</th>
+            <th>Rejected</th>
+            <th>Edited</th>
+            <th>Retired</th>
+            <th>Restored</th>
+            <th>Sent back</th>
+            <th>Perm. deleted</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="r : ${report.perCert()}">
+            <td th:text="${r.examSlug()}">slug</td>
+            <td th:text="${r.uploaded()}">0</td>
+            <td th:text="${r.counts().getApprove()}">0</td>
+            <td th:text="${r.counts().getReject()}">0</td>
+            <td th:text="${r.counts().getEdit()}">0</td>
+            <td th:text="${r.counts().getRetire()}">0</td>
+            <td th:text="${r.counts().getRestore()}">0</td>
+            <td th:text="${r.counts().getSendBack()}">0</td>
+            <td th:text="${r.counts().getPermanentDelete()}">0</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Per-contributor uploads -->
+    <h2>By contributor (uploader / composer / crawler)</h2>
+    <p class="report-empty" th:if="${#lists.isEmpty(report.perContributor())}">No new questions uploaded in this range.</p>
+    <div class="table-scroll" th:unless="${#lists.isEmpty(report.perContributor())}">
+      <table class="admin-table numeric-grid">
+        <thead>
+          <tr><th>Contributor</th><th>Uploaded</th></tr>
+        </thead>
+        <tbody>
+          <tr th:each="r : ${report.perContributor()}">
+            <td th:text="${r.email()}">someone@example.com</td>
+            <td th:text="${r.uploaded()}">0</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>

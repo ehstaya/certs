@@ -1,6 +1,7 @@
 package com.sfquiz.service;
 
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.jsoup.Jsoup;
@@ -8,7 +9,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Set;
 
 /** Converts an uploaded file's bytes to plain text by extension. Images aren't
@@ -70,10 +74,23 @@ public class TextExtractor {
         }
     }
 
-    private String extractPdf(byte[] bytes) throws java.io.IOException {
-        try (PDDocument doc = Loader.loadPDF(bytes)) {
-            PDFTextStripper stripper = new PDFTextStripper();
-            return stripper.getText(doc);
+    /** Disk-backed PDF parse — writes the bytes to a temp file and uses
+     *  PDFBox's file-loader which streams pages off disk on demand instead
+     *  of pinning the entire PDF tree in heap. Big win on Heroku's 512 MB
+     *  dynos where the in-memory variant (Loader.loadPDF(byte[])) can blow
+     *  past the heap cap for any non-trivial PDF. The temp file lives only
+     *  for the duration of extraction. */
+    private String extractPdf(byte[] bytes) throws IOException {
+        Path tmp = Files.createTempFile("sfq-pdf-", ".pdf");
+        try {
+            Files.write(tmp, bytes);
+            try (PDDocument doc = Loader.loadPDF(tmp.toFile(),
+                    IOUtils.createTempFileOnlyStreamCache())) {
+                PDFTextStripper stripper = new PDFTextStripper();
+                return stripper.getText(doc);
+            }
+        } finally {
+            try { Files.deleteIfExists(tmp); } catch (IOException ignored) { /* best-effort */ }
         }
     }
 

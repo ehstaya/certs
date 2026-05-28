@@ -2,6 +2,9 @@ package com.sfquiz.controller;
 
 import com.sfquiz.dto.ExamDto;
 import com.sfquiz.entity.TestAttempt;
+import com.sfquiz.entity.UserRole;
+import com.sfquiz.service.AdminActivityService;
+import com.sfquiz.service.AuthorizationService;
 import com.sfquiz.service.ExamService;
 import com.sfquiz.service.TestAttemptService;
 import org.springframework.security.access.AccessDeniedException;
@@ -24,10 +27,15 @@ public class UserReportsController {
 
     private final TestAttemptService attempts;
     private final ExamService examService;
+    private final AdminActivityService adminActivity;
+    private final AuthorizationService authz;
 
-    public UserReportsController(TestAttemptService attempts, ExamService examService) {
+    public UserReportsController(TestAttemptService attempts, ExamService examService,
+                                 AdminActivityService adminActivity, AuthorizationService authz) {
         this.attempts = attempts;
         this.examService = examService;
+        this.adminActivity = adminActivity;
+        this.authz = authz;
     }
 
     private static String currentEmail(Authentication auth) {
@@ -168,6 +176,32 @@ public class UserReportsController {
         model.addAttribute("passY", passY);
         model.addAttribute("section", "trend");
         return "my-reports-trend";
+    }
+
+    /** "My reports as a domain admin" — counts of approve / reject / edit /
+     *  retire / restore / send-back / permanent-delete / manual-create that
+     *  the signed-in admin themselves performed, over a configurable date
+     *  range. Only meaningful for ADMIN / SUPERADMIN; USER / VERIFIER hit
+     *  this and see zeros (the link is hidden from non-admin nav). */
+    @GetMapping("/as-admin")
+    public String myAdminActivity(Authentication auth,
+                                  @RequestParam(name = "from", required = false) String from,
+                                  @RequestParam(name = "to",   required = false) String to,
+                                  Model model) {
+        String email = currentEmail(auth);
+        boolean isAdmin = authz.currentUser(auth)
+                .map(u -> u.getRole() == UserRole.ADMIN || u.getRole() == UserRole.SUPERADMIN)
+                .orElse(false);
+        java.time.Instant fromI = AdminActivityService.parseStart(from, AdminActivityService.defaultFrom());
+        java.time.Instant toI   = AdminActivityService.parseEndExclusive(to,   AdminActivityService.defaultTo());
+        AdminActivityService.MyAdminReport report = adminActivity.myReport(email, fromI, toI);
+
+        model.addAttribute("report", report);
+        model.addAttribute("isAdmin", isAdmin);
+        model.addAttribute("from", from == null ? java.time.LocalDate.ofInstant(fromI, java.time.ZoneOffset.UTC).toString() : from);
+        model.addAttribute("to",   to   == null ? java.time.LocalDate.ofInstant(toI.minusSeconds(1), java.time.ZoneOffset.UTC).toString() : to);
+        model.addAttribute("section", "as-admin");
+        return "my-reports-as-admin";
     }
 
     /** Drill-down into a single attempt: shows every question the user

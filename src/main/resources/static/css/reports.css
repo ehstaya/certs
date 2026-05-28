@@ -6,7 +6,9 @@
   display: grid;
   grid-template-columns: 240px 1fr;
   gap: 24px;
-  max-width: 1280px;
+  /* Bumped from 1280px so wide reports (bank progress: 12 cols incl. names
+     + 8 action counts) don't force horizontal scroll on a standard laptop. */
+  max-width: 1600px;
   margin: 24px auto;
   padding: 0 24px;
 }
@@ -57,6 +59,86 @@
   border-radius: 10px;
   padding: 24px 28px;
   min-width: 0;  /* needed so the content can shrink properly inside the grid */
+}
+
+/* Shared filter bar — used at the top of every report for the date / cert
+   / admin pickers + Apply button. Lives here (not duplicated per template)
+   so spacing, sizing, and the input chrome stay aligned across reports. */
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  margin: 4px 0 20px;
+  flex-wrap: wrap;
+}
+.filter-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--gray-600, #4b5563);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+}
+.filter-bar label span { font-weight: 600; }
+.filter-bar select,
+.filter-bar input[type="text"],
+.filter-bar input[type="date"] {
+  padding: 7px 10px;
+  border: 1px solid var(--gray-300, #d1d5db);
+  border-radius: 6px;
+  font: 14px/1.2 inherit;
+  background: #fff;
+  color: var(--gray-900, #111827);
+  text-transform: none;        /* override the parent label's uppercase */
+  letter-spacing: normal;
+  min-width: 220px;
+}
+.filter-bar input[type="date"] { min-width: 160px; }
+.filter-bar select:focus,
+.filter-bar input:focus {
+  outline: none;
+  border-color: var(--brand-primary, #0176D3);
+  box-shadow: 0 0 0 2px var(--brand-tint, #EAF5FE);
+}
+.filter-bar .filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Horizontal-scroll wrapper for wide tables (many action columns). Keeps
+   the page itself from horizontally scrolling. */
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 8px;
+  background: #fff;
+}
+.table-scroll > table.admin-table {
+  border: none;
+  border-radius: 0;
+}
+.table-scroll > table.admin-table thead th { white-space: nowrap; }
+
+/* When admin-table holds mostly numeric columns, right-align everything
+   from the second column on so digits line up neatly. The first column
+   (labels / names) stays left-aligned. */
+.admin-table.numeric-grid th:not(:first-child),
+.admin-table.numeric-grid td:not(:first-child) {
+  text-align: right;
+}
+.admin-table.numeric-grid tbody td:not(:first-child) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Empty-state line shown above an empty table — matches the in-table
+   "empty" cell pattern used elsewhere but standalone. */
+.report-empty {
+  color: var(--gray-500, #6b7280);
+  font-style: italic;
+  padding: 10px 0;
 }
 .reports-content h1 {
   margin: 0 0 8px;

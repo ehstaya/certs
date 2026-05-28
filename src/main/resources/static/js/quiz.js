@@ -166,7 +166,7 @@
     if (voteDn) voteDn.addEventListener("click", () => castVote(-1));
     $("#submitBtn").addEventListener("click", onSubmit);
     $("#backBtn").addEventListener("click", () => goTo(state.index - 1));
-    $("#nextBtn").addEventListener("click", () => goTo(state.index + 1));
+    $("#nextBtn").addEventListener("click", onNextClicked);
     $("#finishBtn").addEventListener("click", onFinish);
     $("#backToTestBtn").addEventListener("click", hideResultsPanel);
     $("#retestBtn").addEventListener("click", onResetTest);
@@ -864,6 +864,28 @@
 
   function onConfirmCancel() {
     hideConfirmPanel();
+  }
+
+  /** Next button — if the current question hasn't been submitted, warn the
+   *  user that they're about to skip it (it'll show as Skipped in the sidebar
+   *  and count against them on the results screen). Confirmation proceeds;
+   *  cancel keeps them on the same question to answer first. */
+  function onNextClicked() {
+    const total = state.questions.length;
+    if (state.index >= total - 1) return;
+    const q = state.questions[state.index];
+    const ans = state.answers.get(q.id);
+    const submitted = ans && ans.submitted;
+    if (submitted) {
+      goTo(state.index + 1);
+      return;
+    }
+    showConfirmPanel({
+      title: "Skip this question?",
+      body: "You haven't submitted an answer yet. If you skip, this question will be marked as Skipped — you can come back to it from the sidebar before you finish the test.",
+      confirmLabel: "Skip and continue",
+      onConfirm: () => goTo(state.index + 1)
+    });
   }
 
   function onConfirmOk() {

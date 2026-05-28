@@ -46,12 +46,23 @@ public class StudyUpload {
     @Column(name = "exam_slug", length = 64)
     private String examSlug;
 
-    /** Admin override: when true, UploadProcessor skips the Claude dump-check
-     *  step that ordinarily marks leaked-exam content as SKIPPED. Used when an
-     *  admin reviews a flagged upload and decides to force-extract anyway. */
+    /** Legacy field — was used by the old "admin overrides dump-check" flow.
+     *  Kept here so existing rows / the DB column stay valid; the upload
+     *  pipeline no longer reads it. Dump-suspected uploads now flow through
+     *  to the admin review queue with {@link #dumpSuspected} = true instead
+     *  of being blocked. */
     @org.hibernate.annotations.ColumnDefault("false")
     @Column(name = "dump_check_override", nullable = false)
     private boolean dumpCheckOverride = false;
+
+    /** True when Claude's dump-check flagged this upload as possibly leaked
+     *  exam content. The questions still get extracted and queued for admin
+     *  review — this flag just surfaces a yellow warning on the user's
+     *  upload list ("admin will review extra carefully") and lets the admin
+     *  queue badge "dump-suspected" so they can apply heavier scrutiny. */
+    @org.hibernate.annotations.ColumnDefault("false")
+    @Column(name = "dump_suspected", nullable = false)
+    private boolean dumpSuspected = false;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
@@ -87,6 +98,8 @@ public class StudyUpload {
     public void setExamSlug(String examSlug) { this.examSlug = examSlug; }
     public boolean isDumpCheckOverride() { return dumpCheckOverride; }
     public void setDumpCheckOverride(boolean dumpCheckOverride) { this.dumpCheckOverride = dumpCheckOverride; }
+    public boolean isDumpSuspected() { return dumpSuspected; }
+    public void setDumpSuspected(boolean dumpSuspected) { this.dumpSuspected = dumpSuspected; }
     public Status getStatus() { return status; }
     public void setStatus(Status status) { this.status = status; }
     public Instant getProcessedAt() { return processedAt; }

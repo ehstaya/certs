@@ -81,6 +81,21 @@ public class Question {
     @Column(name = "source_url", length = 1024)
     private String sourceUrl;
 
+    /** When this question first entered the bank. Set by every create path
+     *  (crawler import, screenshot/text extraction, manual compose). Drives
+     *  the "uploaded in time range" filter on the bank-progress report.
+     *  Legacy rows (pre-tracking) stay null and are excluded from the
+     *  in-range totals. */
+    @Column(name = "created_at")
+    private java.time.Instant createdAt;
+
+    /** Email of the user who originated this question. For the upload
+     *  pipeline this is the uploader; for manual compose it's the
+     *  composer; for crawler import it's the crawler's service account
+     *  email (or null on legacy rows). */
+    @Column(name = "created_by_email", length = 191)
+    private String createdByEmail;
+
     @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("label ASC")
     private List<Choice> choices = new ArrayList<>();
@@ -111,6 +126,10 @@ public class Question {
     public void setDuplicateOfId(Long duplicateOfId) { this.duplicateOfId = duplicateOfId; }
     public String getSourceUrl() { return sourceUrl; }
     public void setSourceUrl(String sourceUrl) { this.sourceUrl = sourceUrl; }
+    public java.time.Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(java.time.Instant createdAt) { this.createdAt = createdAt; }
+    public String getCreatedByEmail() { return createdByEmail; }
+    public void setCreatedByEmail(String createdByEmail) { this.createdByEmail = createdByEmail; }
     public List<Choice> getChoices() { return choices; }
     public void setChoices(List<Choice> choices) { this.choices = choices; }
 

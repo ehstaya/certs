@@ -19,8 +19,8 @@
     <a class="topbar-link user-link" href="/">Exams</a>
     <a class="topbar-link user-link" href="/my/reports">My reports</a>
     <a class="topbar-link user-link" href="/uploads">Add questions</a>
-    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
-    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Question review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Admin reports</a>
     <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
     <a class="topbar-link" href="/change-password">Change password</a>
     <span class="topbar-user" id="userBadge"></span>
@@ -51,6 +51,9 @@
     <div class="reports-tree-section">Per test</div>
     <a href="/my/reports/per-test" th:classappend="${section == 'per-test'} ? 'active' : ''"><span>📋</span> Per-test stats</a>
     <a href="/my/reports/trend" th:classappend="${section == 'trend'} ? 'active' : ''"><span>📈</span> Score trend</a>
+    <div class="reports-tree-section admin-only" style="display:none">As domain admin</div>
+    <a href="/my/reports/as-admin" class="admin-only" style="display:none"
+       th:classappend="${section == 'as-admin'} ? 'active' : ''"><span>🛡️</span> My admin activity</a>
   </aside>
 
   <main class="reports-content">

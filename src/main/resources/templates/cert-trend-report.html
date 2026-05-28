@@ -7,9 +7,7 @@
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="stylesheet" href="/css/reports.css" />
   <style>
-    .filter-bar { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
-    .filter-bar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-700, #374151); }
-    .filter-bar select { padding: 7px 10px; border: 1px solid var(--gray-300, #d1d5db); border-radius: 6px; font-size: 14px; min-width: 320px; background: #fff; }
+    /* .filter-bar lives in reports.css — shared across every report. */
     .trend-chart { width: 100%; max-width: 740px; background: #fff; border: 1px solid var(--gray-200, #e5e7eb); border-radius: 8px; padding: 8px; }
     .trend-axis { stroke: var(--gray-300, #d1d5db); stroke-width: 1; }
     .trend-axis-faint { stroke: var(--gray-200, #e5e7eb); stroke-width: 1; stroke-dasharray: 2 3; }
@@ -41,8 +39,8 @@
   <div class="topbar-actions">
     <a class="topbar-link user-link" href="/">Exams</a>
     <a class="topbar-link user-link" href="/my/reports">My reports</a>
-    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
-    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Question review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Admin reports</a>
     <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
     <a class="topbar-link user-link" href="/uploads">Add questions</a>
     <a class="topbar-link" href="/change-password">Change password</a>
@@ -78,6 +76,8 @@
     <div class="reports-tree-section">Quality</div>
     <a href="/admin/reports/quality" th:classappend="${section == 'quality'} ? 'active' : ''"><span>👍</span> Question quality</a>
     <a href="/admin/reports/verifier-feedback" th:classappend="${section == 'verifier-feedback'} ? 'active' : ''"><span>📝</span> Verifier feedback</a>
+    <div class="reports-tree-section superadmin-only" style="display:none">Question bank</div>
+    <a class="superadmin-only" style="display:none" href="/admin/reports/bank-progress" th:classappend="${section == 'bank-progress'} ? 'active' : ''"><span>🗂️</span> Bank progress</a>
   </aside>
 
   <main class="reports-content">

@@ -17,8 +17,8 @@
   <div class="topbar-actions">
     <a class="topbar-link user-link" href="/">Exams</a>
     <a class="topbar-link user-link" href="/my/reports">My reports</a>
-    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Questions</a>
-    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Reports</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Question review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Admin reports</a>
     <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
     <a class="topbar-link user-link" href="/uploads">Add questions</a>
     <a class="topbar-link" href="/change-password">Change password</a>
@@ -56,63 +56,38 @@
   <p class="banner banner-ok" th:if="${classifyMessage}" th:text="${classifyMessage}">classify message</p>
   <p class="banner banner-ok" th:if="${enrichMessage}" th:text="${enrichMessage}">enrich message</p>
 
-  <section class="admin-section">
+  <p class="muted" th:if="${#lists.isEmpty(manageableExams)}"
+     style="background:#fef3c7; border-left:3px solid #f59e0b; padding:10px 12px; border-radius:4px;">
+    You aren't assigned as a domain admin for any certification, so there's nothing to maintain here.
+    Ask a super admin to assign you a cert from the Admin Dashboard.
+  </p>
+
+  <section class="admin-section" th:unless="${#lists.isEmpty(manageableExams)}">
     <h2>Topic classification</h2>
     <p class="muted">Assign each approved question to one of the official exam topics so session sampling matches the real exam mix. Uses Claude Haiku (~$0.15 for 250 questions) and only touches untagged rows.</p>
     <div class="maint-form-row">
-      <form method="post" action="/admin/questions/classify-topics" style="display:inline">
-        <input type="hidden" name="examSlug" value="salesforce-admin" />
+      <form th:each="e : ${manageableExams}" method="post" action="/admin/questions/classify-topics" style="display:inline">
+        <input type="hidden" name="examSlug" th:value="${e.slug()}" />
         <button class="btn btn-primary btn-sm" type="submit"
-                data-confirm-title="Classify Salesforce-Admin topics"
-                data-confirm="Classify every untagged Salesforce-Admin question via Claude Haiku? Bounded by the daily Anthropic budget."
-                data-confirm-ok="Classify">
-          Classify Salesforce-Admin topics
-        </button>
-      </form>
-      <form method="post" action="/admin/questions/classify-topics" style="display:inline">
-        <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
-        <button class="btn btn-sm" type="submit">Classify MCPA topics</button>
-      </form>
-      <form method="post" action="/admin/questions/classify-topics" style="display:inline">
-        <input type="hidden" name="examSlug" value="agentforce-specialist" />
-        <button class="btn btn-sm" type="submit">Classify Agentforce topics</button>
-      </form>
-      <form method="post" action="/admin/questions/classify-topics" style="display:inline">
-        <input type="hidden" name="examSlug" value="data-cloud-consultant" />
-        <button class="btn btn-sm" type="submit">Classify Data-Cloud topics</button>
+                th:attr="data-confirm-title=|Classify ${e.name()} topics|,
+                         data-confirm=|Classify every untagged ${e.name()} question via Claude Haiku? Bounded by the daily Anthropic budget.|"
+                data-confirm-ok="Classify"
+                th:text="|Classify ${e.name()} topics|">Classify topics</button>
       </form>
     </div>
   </section>
 
-  <section class="admin-section">
+  <section class="admin-section" th:unless="${#lists.isEmpty(manageableExams)}">
     <h2>Explanation backfill</h2>
     <p class="muted">For questions that landed without an explanation (e.g. uploaded screenshots that only showed the prompt + choices), generate a 2–3 sentence explanation + a vendor doc link via Claude Haiku. References point at the canonical site for each exam: <code>help.salesforce.com</code>, <code>trailhead.salesforce.com</code>, <code>docs.mulesoft.com</code>, etc. Only touches rows missing both — safe to re-run.</p>
     <div class="maint-form-row">
-      <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
-        <input type="hidden" name="examSlug" value="salesforce-admin" />
+      <form th:each="e : ${manageableExams}" method="post" action="/admin/questions/enrich-explanations" style="display:inline">
+        <input type="hidden" name="examSlug" th:value="${e.slug()}" />
         <button class="btn btn-primary btn-sm" type="submit"
-                data-confirm-title="Enrich Salesforce-Admin"
-                data-confirm="Enrich missing Salesforce-Admin explanations from help.salesforce.com / Trailhead? Bounded by the daily Anthropic budget."
-                data-confirm-ok="Enrich">
-          Enrich Salesforce-Admin
-        </button>
-      </form>
-      <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
-        <input type="hidden" name="examSlug" value="mulesoft-platform-architect" />
-        <button class="btn btn-sm" type="submit"
-                data-confirm-title="Enrich MCPA"
-                data-confirm="Enrich MCPA explanations from docs.mulesoft.com? Bounded by the daily Anthropic budget."
-                data-confirm-ok="Enrich">
-          Enrich MCPA
-        </button>
-      </form>
-      <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
-        <input type="hidden" name="examSlug" value="agentforce-specialist" />
-        <button class="btn btn-sm" type="submit">Enrich Agentforce</button>
-      </form>
-      <form method="post" action="/admin/questions/enrich-explanations" style="display:inline">
-        <input type="hidden" name="examSlug" value="data-cloud-consultant" />
-        <button class="btn btn-sm" type="submit">Enrich Data-Cloud</button>
+                th:attr="data-confirm-title=|Enrich ${e.name()}|,
+                         data-confirm=|Enrich missing ${e.name()} explanations via Claude Haiku? Bounded by the daily Anthropic budget.|"
+                data-confirm-ok="Enrich"
+                th:text="|Enrich ${e.name()}|">Enrich</button>
       </form>
     </div>
   </section>

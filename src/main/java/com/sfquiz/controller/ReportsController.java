@@ -7,8 +7,10 @@ import com.sfquiz.entity.UserRole;
 import com.sfquiz.repository.QuestionRepository;
 import com.sfquiz.repository.QuestionVoteRepository;
 import com.sfquiz.repository.TestAttemptRepository;
+import com.sfquiz.service.AdminActivityService;
 import com.sfquiz.service.AuthorizationService;
 import com.sfquiz.service.ExamService;
+import com.sfquiz.service.QuestionAdminService;
 import com.sfquiz.service.VoteService;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -45,19 +47,25 @@ public class ReportsController {
     private final QuestionVoteRepository votes;
     private final TestAttemptRepository attempts;
     private final AuthorizationService authz;
+    private final AdminActivityService adminActivity;
+    private final QuestionAdminService questionAdmin;
 
     public ReportsController(VoteService voteService,
                              ExamService examService,
                              QuestionRepository questions,
                              QuestionVoteRepository votes,
                              TestAttemptRepository attempts,
-                             AuthorizationService authz) {
+                             AuthorizationService authz,
+                             AdminActivityService adminActivity,
+                             QuestionAdminService questionAdmin) {
         this.voteService = voteService;
         this.examService = examService;
         this.questions = questions;
         this.votes = votes;
         this.attempts = attempts;
         this.authz = authz;
+        this.adminActivity = adminActivity;
+        this.questionAdmin = questionAdmin;
     }
 
     /** Returns the exams the calling user is allowed to see in the reports
@@ -78,6 +86,25 @@ public class ReportsController {
         return authz.currentUser(auth)
                 .map(u -> u.getRole() == UserRole.ADMIN)
                 .orElse(false);
+    }
+
+    /** True if the caller is a super admin. */
+    private boolean isSuperAdmin(Authentication auth) {
+        return authz.currentUser(auth)
+                .map(u -> u.getRole() == UserRole.SUPERADMIN)
+                .orElse(false);
+    }
+
+    /** Throw 403 if the caller isn't a super admin — used to gate reports
+     *  that intentionally show cross-admin activity (other admins' approval
+     *  / rejection / retire rates). Domain admins see their own activity at
+     *  /my/reports/as-admin instead. */
+    private void requireSuperAdmin(Authentication auth) {
+        if (!isSuperAdmin(auth)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN,
+                    "This report is only available to super admins.");
+        }
     }
 
     /** Count questions with a given status, scoped to a slug set. Empty
@@ -136,6 +163,16 @@ public class ReportsController {
                 active, approved, pending, retired, totalVotes, up, down, pct));
         model.addAttribute("perExam", perExam);
         model.addAttribute("exams", exams);
+
+        // Recent activity, scoped to the slugs the caller can see. Super
+        // admins (slugSet matches every active cert) get cross-platform
+        // activity; domain admins only see uploads + approvals on their
+        // governed certs.
+        User u = authz.currentUser(auth).orElse(null);
+        Set<String> scope = authz.managedExamSlugs(u);
+        model.addAttribute("recentImports", questionAdmin.recentImportEventViewsScoped(scope));
+        model.addAttribute("recentApproved", questionAdmin.recentApprovedScoped(10, scope));
+
         model.addAttribute("section", "dashboard");
         return "reports-dashboard";
     }
@@ -454,5 +491,61 @@ public class ReportsController {
         model.addAttribute("leaderboard", all);
         model.addAttribute("section", "quality");
         return "quality-report";
+    }
+
+    /** Super-admin / domain-admin "question bank progress" report — totals
+     *  + per-cert + per-admin + per-contributor breakdowns over a configurable
+     *  date range. Filterable to one cert + one admin. Domain admins see only
+     *  the certs they govern; super admins see everything. */
+    @GetMapping("/bank-progress")
+    public String bankProgress(@RequestParam(name = "from", required = false) String from,
+                               @RequestParam(name = "to",   required = false) String to,
+                               @RequestParam(name = "exam", required = false) String exam,
+                               @RequestParam(name = "adminEmail", required = false) String adminEmail,
+                               Authentication auth,
+                               Model model) {
+        // Cross-admin breakdown — super admin only. Domain admins use
+        // /my/reports/as-admin for their own activity.
+        requireSuperAdmin(auth);
+        List<ExamDto> exams = examsVisibleTo(auth);
+        Set<String> visibleSlugs = exams.stream().map(ExamDto::slug)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // Determine the slug scope. If the caller pinned a specific exam, we
+        // restrict to just that one; otherwise we use the full visible set.
+        // Out-of-scope slugs are silently ignored — same approach as the other
+        // admin reports.
+        Set<String> scopeSlugs;
+        if (exam != null && !exam.isBlank() && visibleSlugs.contains(exam)) {
+            scopeSlugs = Set.of(exam);
+        } else {
+            exam = "";
+            // Super admin without exam filter → wildcard "*" to skip the SQL
+            // IN-clause and avoid passing an empty collection.
+            scopeSlugs = isDomainAdmin(auth) ? visibleSlugs : Set.of("*");
+        }
+
+        Instant fromI = AdminActivityService.parseStart(from, AdminActivityService.defaultFrom());
+        Instant toI   = AdminActivityService.parseEndExclusive(to, AdminActivityService.defaultTo());
+
+        String adminFilter = (adminEmail == null || adminEmail.isBlank()) ? null : adminEmail.trim();
+
+        AdminActivityService.BankProgressReport report =
+                adminActivity.bankProgress(fromI, toI, scopeSlugs, adminFilter);
+
+        // Admin dropdown options — full set from the unfiltered (still scope-bounded) range.
+        List<String> adminOptions = adminActivity.distinctAdminEmails(fromI, toI, scopeSlugs);
+
+        model.addAttribute("report", report);
+        model.addAttribute("exams", exams);
+        model.addAttribute("exam", exam == null ? "" : exam);
+        model.addAttribute("from", from == null ? java.time.LocalDate.ofInstant(fromI, java.time.ZoneOffset.UTC).toString() : from);
+        // "to" parsed as exclusive +1 day; show the inclusive last-day-in-range to the user.
+        model.addAttribute("to",   to   == null ? java.time.LocalDate.ofInstant(toI.minusSeconds(1), java.time.ZoneOffset.UTC).toString() : to);
+        model.addAttribute("adminEmail", adminFilter == null ? "" : adminFilter);
+        model.addAttribute("adminOptions", adminOptions);
+        model.addAttribute("scopedToCerts", isDomainAdmin(auth));
+        model.addAttribute("section", "bank-progress");
+        return "bank-progress-report";
     }
 }
