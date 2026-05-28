@@ -323,6 +323,29 @@ public class QuestionAdminService {
         q.setStatus(Question.Status.APPROVED);
         repo.save(q);
         logAction(q, com.sfquiz.entity.QuestionAction.Action.APPROVE, adminEmail);
+
+        // Override-on-approve: this question was flagged at import time as a
+        // duplicate of an existing question (its text matched). Approving
+        // the new version means "the new wording wins" — retire the
+        // previously approved original so the live bank holds exactly one
+        // copy and learners don't see both. We only override APPROVED
+        // originals; if the original was already RETIRED / REJECTED /
+        // PENDING, leave it alone (no live duplication to clean up).
+        Long origId = q.getDuplicateOfId();
+        if (origId != null) {
+            repo.findById(origId).ifPresent(orig -> {
+                if (orig.getStatus() == Question.Status.APPROVED && !orig.getId().equals(q.getId())) {
+                    orig.setStatus(Question.Status.RETIRED);
+                    orig.setRetiredByEmail(adminEmail);
+                    orig.setRetiredAt(java.time.Instant.now());
+                    repo.save(orig);
+                    logAction(orig, com.sfquiz.entity.QuestionAction.Action.RETIRE, adminEmail);
+                    log.info("override-on-approve: q#{} approved -> retired prior q#{} (same text, replaced by re-upload)",
+                            q.getNumber(), orig.getNumber());
+                }
+            });
+        }
+
         // Admin is the first pass for explanations. If they approved this
         // question without supplying one, hand it off to Claude to generate
         // one from the vendor's docs in the background — the admin already

@@ -175,6 +175,7 @@ public class StudyUploadController {
         }
         int saved = 0;
         List<String> rejected = new ArrayList<>();
+        List<String> duplicateOfPrior = new ArrayList<>();
         if (files != null) {
             for (MultipartFile file : files) {
                 if (file == null || file.isEmpty()) continue;
@@ -190,11 +191,14 @@ public class StudyUploadController {
                     continue;
                 }
                 try {
-                    Long id = persist(file, safe, email, examSlug);
-                    log.info("saved upload id={} {} by={} exam={} ({} bytes)",
-                            id, safe, email, examSlug, file.getSize());
-                    processor.processAsync(id);
+                    PersistResult r = persist(file, safe, email, examSlug);
+                    log.info("saved upload id={} {} by={} exam={} ({} bytes) duplicateOf={}",
+                            r.id, safe, email, examSlug, file.getSize(), r.duplicateOfUploadId);
+                    processor.processAsync(r.id);
                     saved++;
+                    if (r.duplicateOfUploadId != null) {
+                        duplicateOfPrior.add(safe + " (re-upload of #" + r.duplicateOfUploadId + ")");
+                    }
                 } catch (IOException e) {
                     log.error("failed to save {}: {}", original, e.getMessage());
                     rejected.add(original + " (write failed: " + e.getMessage() + ")");
@@ -204,6 +208,9 @@ public class StudyUploadController {
         flash.addFlashAttribute("uploadedCount", saved);
         flash.addFlashAttribute("uploadedExam", examSlug);
         flash.addFlashAttribute("rejected", rejected);
+        if (!duplicateOfPrior.isEmpty()) {
+            flash.addFlashAttribute("duplicateUploads", duplicateOfPrior);
+        }
         return "redirect:/uploads";
     }
 
@@ -268,18 +275,54 @@ public class StudyUploadController {
         return uploads.save(u).getId();
     }
 
+    /** Result of persisting one upload — id of the new row and (if any) the
+     *  id of the earlier upload it duplicates so the caller can flash a
+     *  "re-upload of #N" notice without re-querying. */
+    public record PersistResult(Long id, Long duplicateOfUploadId) {}
+
     @Transactional
-    public Long persist(MultipartFile file, String safeName, String uploaderEmail, String examSlug) throws IOException {
+    public PersistResult persist(MultipartFile file, String safeName, String uploaderEmail, String examSlug) throws IOException {
+        byte[] bytes = file.getBytes();
+        String hash = sha256(bytes);
+        // Re-upload detection: same hash + same target cert → flag this row
+        // so the UI shows a "duplicate of #N" badge and the per-question
+        // override-on-approve path can retire stale approved versions.
+        Long priorUploadId = uploads
+                .findFirstByContentHashAndExamSlugOrderByUploadedAtDesc(hash, examSlug)
+                .map(StudyUpload::getId)
+                .orElse(null);
+
         StudyUpload u = new StudyUpload();
         u.setOriginalName(safeName);
         u.setContentType(file.getContentType());
         u.setSizeBytes(file.getSize());
-        u.setContent(file.getBytes());
+        u.setContent(bytes);
+        u.setContentHash(hash);
+        u.setDuplicateOfUploadId(priorUploadId);
         u.setUploadedAt(Instant.now());
         u.setUploadedByEmail(uploaderEmail);
         u.setExamSlug(examSlug);
         u.setStatus(StudyUpload.Status.PENDING);
-        return uploads.save(u).getId();
+        Long savedId = uploads.save(u).getId();
+        return new PersistResult(savedId, priorUploadId);
+    }
+
+    /** SHA-256 of file bytes, hex-encoded — used as a stable file identity
+     *  for duplicate-detection. We don't need cryptographic strength, but
+     *  SHA-256 is already on the JVM classpath and avoids collision
+     *  surprises that MD5 / CRC32 would risk on a growing corpus. */
+    private static String sha256(byte[] bytes) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(bytes);
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 is guaranteed available in every JRE since 1.4; this
+            // branch is unreachable but the API forces us to handle it.
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 
     @PostMapping("/{id}/delete")
@@ -329,6 +372,7 @@ public class StudyUploadController {
             r.put("questionsImported", u.getQuestionsImported());
             r.put("error", u.getError());
             r.put("dumpSuspected", u.isDumpSuspected());
+            r.put("duplicateOfUploadId", u.getDuplicateOfUploadId());
             dtos.add(r);
         }
         java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();

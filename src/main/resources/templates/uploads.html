@@ -98,6 +98,7 @@
     .pill.failed     { background: var(--red-100, #fee2e2); color: var(--red-800, #991b1b); }
     .pill.skipped    { background: #f3f4f6; color: #4b5563; }
     .pill.dump       { background: #fef3c7; color: #92400e; margin-left: 6px; }
+    .pill.dup        { background: #e0e7ff; color: #3730a3; margin-left: 6px; }
     .row-error { color: var(--red-800, #991b1b); font-size: .8rem; margin-top: 4px; }
 
     /* Drag-drop / paste zone — the primary upload entry point for end users.
@@ -246,6 +247,20 @@
     <span th:each="r, it : ${rejected}">
       <span th:text="${r}">…</span><span th:if="${!it.last}">, </span>
     </span>
+  </p>
+  <!-- Re-upload warning. The file still gets extracted and queued; this is
+       just a heads-up so the user knows we noticed and the admin queue
+       will surface the per-question duplicate badges. -->
+  <p class="banner banner-warn"
+     th:if="${duplicateUploads != null and not #lists.isEmpty(duplicateUploads)}"
+     style="background:#fef3c7; border-left:3px solid #f59e0b; padding:10px 12px; border-radius:4px; color:#78350f;">
+    ⚠ Re-upload detected — same file content as an earlier submission:
+    <span th:each="r, it : ${duplicateUploads}">
+      <strong th:text="${r}">…</strong><span th:if="${!it.last}">, </span>
+    </span>.
+    The new file will still be extracted and queued for admin review.
+    If the admin approves an extracted question that matches a previously
+    approved one, the older version is retired automatically.
   </p>
   <p class="muted" th:if="${param.deleted}">Deleted.</p>
   <p class="banner banner-error" th:if="${uploadError}" th:text="${uploadError}">error</p>
@@ -579,6 +594,9 @@
             </span>
             <span th:if="${u.dumpSuspected}" class="pill dump"
                   title="Claude flagged this as possible leaked exam content. Questions still flowed through to the admin review queue — admin will give them extra scrutiny.">⚠ Possible dump</span>
+            <span th:if="${u.duplicateOfUploadId != null}" class="pill dup"
+                  th:title="'Same file content as upload #' + ${u.duplicateOfUploadId} + '. Questions were extracted and re-queued; approving a duplicate question auto-retires the older approved version.'"
+                  th:text="'⤴ Re-upload of #' + ${u.duplicateOfUploadId}">⤴ Re-upload</span>
           </td>
           <td>
             <span th:if="${u.questionsImported != null}">
@@ -660,6 +678,10 @@
       let html = statusPill(r.status);
       if (r.dumpSuspected) {
         html += ' <span class="pill dump" title="Claude flagged this as possible leaked exam content. Questions still flowed through to the admin review queue — admin will give them extra scrutiny.">⚠ Possible dump</span>';
+      }
+      if (r.duplicateOfUploadId) {
+        const t = 'Same file content as upload #' + r.duplicateOfUploadId + '. Questions were extracted and re-queued; approving a duplicate question auto-retires the older approved version.';
+        html += ' <span class="pill dup" title="' + esc(t) + '">⤴ Re-upload of #' + esc(r.duplicateOfUploadId) + '</span>';
       }
       return html;
     }

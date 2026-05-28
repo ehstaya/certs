@@ -64,6 +64,21 @@ public class StudyUpload {
     @Column(name = "dump_suspected", nullable = false)
     private boolean dumpSuspected = false;
 
+    /** SHA-256 of the file bytes — stable identifier so we can detect when
+     *  the same file (or an identical copy) is re-uploaded later. Nullable
+     *  on legacy rows; populated by StudyUploadController on every new
+     *  upload going forward. */
+    @Column(name = "content_hash", length = 64)
+    private String contentHash;
+
+    /** When this upload's contentHash matched a prior upload's, this is
+     *  the id of that earlier upload. Surfaces a "re-upload of #N" badge
+     *  in the UI and lets the import pipeline auto-retire the previously
+     *  approved questions when their new versions are approved — the
+     *  "uploading a corrected PDF replaces the old questions" flow. */
+    @Column(name = "duplicate_of_upload_id")
+    private Long duplicateOfUploadId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
     private Status status = Status.PENDING;
@@ -100,6 +115,10 @@ public class StudyUpload {
     public void setDumpCheckOverride(boolean dumpCheckOverride) { this.dumpCheckOverride = dumpCheckOverride; }
     public boolean isDumpSuspected() { return dumpSuspected; }
     public void setDumpSuspected(boolean dumpSuspected) { this.dumpSuspected = dumpSuspected; }
+    public String getContentHash() { return contentHash; }
+    public void setContentHash(String contentHash) { this.contentHash = contentHash; }
+    public Long getDuplicateOfUploadId() { return duplicateOfUploadId; }
+    public void setDuplicateOfUploadId(Long duplicateOfUploadId) { this.duplicateOfUploadId = duplicateOfUploadId; }
     public Status getStatus() { return status; }
     public void setStatus(Status status) { this.status = status; }
     public Instant getProcessedAt() { return processedAt; }
