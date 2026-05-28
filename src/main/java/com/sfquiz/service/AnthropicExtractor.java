@@ -120,10 +120,25 @@ public class AnthropicExtractor {
      *  ~120 questions and still well under the budget per call. */
     private static final long EXTRACT_MAX_TOKENS = 16_000L;
 
+    /** How much of the source text we send to Claude in a single call. A
+     *  typical 50-question practice PDF is 80–120k characters; the old
+     *  24k cap silently dropped ~75% of the file, which is why "uploads
+     *  weren't extracting the whole PDF." Sonnet 4.6 has a 200k *token*
+     *  input window (~600k characters), so 150k chars is comfortably
+     *  within capacity and keeps room for the system prompt + JSON output.
+     *  Files larger than this still get truncated; the next iteration
+     *  should chunk them into multiple calls. */
+    private static final int EXTRACT_MAX_INPUT_CHARS = 150_000;
+
     /** Extract questions from plain text. */
     public List<ImportQuestionRequest> extractFromText(String text, Long uploadId) {
         if (!enabled) return List.of();
-        String user = "TEXT:\n" + truncate(text, 24_000);
+        if (text != null && text.length() > EXTRACT_MAX_INPUT_CHARS) {
+            log.warn("extract: source text is {} chars, truncating to {} for Claude " +
+                     "(questions past that point will be missed — consider chunking)",
+                     text.length(), EXTRACT_MAX_INPUT_CHARS);
+        }
+        String user = "TEXT:\n" + truncate(text, EXTRACT_MAX_INPUT_CHARS);
         MessageCreateParams params = MessageCreateParams.builder()
                 .model(extractModel)
                 .maxTokens(EXTRACT_MAX_TOKENS)
