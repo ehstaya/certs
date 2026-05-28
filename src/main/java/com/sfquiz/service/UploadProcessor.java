@@ -43,7 +43,7 @@ public class UploadProcessor {
                            QuestionAdminService questions,
                            CostMeter costs,
                            AdminNotifier adminNotifier,
-                           @Value("${app.extraction.stuck-after-minutes:5}") int stuckAfterMinutes) {
+                           @Value("${app.extraction.stuck-after-minutes:20}") int stuckAfterMinutes) {
         this.uploads = uploads;
         this.texts = texts;
         this.anthropic = anthropic;
