@@ -120,25 +120,46 @@ public class AnthropicExtractor {
      *  ~120 questions and still well under the budget per call. */
     private static final long EXTRACT_MAX_TOKENS = 16_000L;
 
-    /** How much of the source text we send to Claude in a single call. A
-     *  typical 50-question practice PDF is 80–120k characters; the old
-     *  24k cap silently dropped ~75% of the file, which is why "uploads
-     *  weren't extracting the whole PDF." Sonnet 4.6 has a 200k *token*
-     *  input window (~600k characters), so 150k chars is comfortably
-     *  within capacity and keeps room for the system prompt + JSON output.
-     *  Files larger than this still get truncated; the next iteration
-     *  should chunk them into multiple calls. */
-    private static final int EXTRACT_MAX_INPUT_CHARS = 150_000;
+    /** Chunk size for a single Claude call. Sized so the JSON output for
+     *  a chunk of this many input chars comfortably fits under the 16k
+     *  output token cap. 50k chars input ≈ 13k tokens in, which leaves
+     *  plenty of room for ~50 questions × ~250 tokens each in the JSON
+     *  reply. 150k chars in a single call was overflowing the output. */
+    private static final int EXTRACT_CHUNK_CHARS = 50_000;
 
-    /** Extract questions from plain text. */
+    /** Extract questions from plain text. For inputs longer than
+     *  {@link #EXTRACT_CHUNK_CHARS} the text is split into chunks and each
+     *  chunk is sent in its own call; the resulting question lists are
+     *  concatenated and de-duplicated by normalized text. This is how we
+     *  cover a full PDF (often 200k+ chars) without truncating mid-output. */
     public List<ImportQuestionRequest> extractFromText(String text, Long uploadId) {
-        if (!enabled) return List.of();
-        if (text != null && text.length() > EXTRACT_MAX_INPUT_CHARS) {
-            log.warn("extract: source text is {} chars, truncating to {} for Claude " +
-                     "(questions past that point will be missed — consider chunking)",
-                     text.length(), EXTRACT_MAX_INPUT_CHARS);
+        if (!enabled || text == null || text.isBlank()) return List.of();
+        if (text.length() <= EXTRACT_CHUNK_CHARS) {
+            return extractOneChunk(text, uploadId, /*label=*/ "");
         }
-        String user = "TEXT:\n" + truncate(text, EXTRACT_MAX_INPUT_CHARS);
+        // Multi-chunk path. We deliberately don't overlap chunks — a
+        // question split across the boundary is rare in practice (the
+        // PDF text-extractor reflows by paragraph) and the dedupe below
+        // catches accidental duplicates.
+        int chunks = (text.length() + EXTRACT_CHUNK_CHARS - 1) / EXTRACT_CHUNK_CHARS;
+        log.info("extract: source text {} chars, splitting into {} chunks", text.length(), chunks);
+        List<ImportQuestionRequest> all = new ArrayList<>();
+        for (int i = 0; i < chunks; i++) {
+            int start = i * EXTRACT_CHUNK_CHARS;
+            int end = Math.min(start + EXTRACT_CHUNK_CHARS, text.length());
+            List<ImportQuestionRequest> got = extractOneChunk(
+                    text.substring(start, end), uploadId, "chunk " + (i + 1) + "/" + chunks);
+            log.info("extract: chunk {}/{} yielded {} questions", i + 1, chunks, got.size());
+            all.addAll(got);
+        }
+        // Same question can appear in two chunks if the PDF repeated it
+        // (e.g. answer key page). Drop later copies by normalized text.
+        return dedupeByNormalizedText(all);
+    }
+
+    /** One Claude call against a single text chunk. */
+    private List<ImportQuestionRequest> extractOneChunk(String chunk, Long uploadId, String label) {
+        String user = "TEXT:\n" + chunk;
         MessageCreateParams params = MessageCreateParams.builder()
                 .model(extractModel)
                 .maxTokens(EXTRACT_MAX_TOKENS)
@@ -146,8 +167,22 @@ public class AnthropicExtractor {
                 .addUserMessage(user)
                 .build();
         Message reply = client.messages().create(params);
-        recordUsage("extract-text", extractModel, reply, uploadId);
+        recordUsage(label.isEmpty() ? "extract-text" : "extract-text-" + label,
+                extractModel, reply, uploadId);
         return parseQuestions(firstText(reply));
+    }
+
+    /** Drop later copies of any question whose normalized text already
+     *  appeared. Preserves order so the first occurrence wins. */
+    private static List<ImportQuestionRequest> dedupeByNormalizedText(List<ImportQuestionRequest> raw) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        List<ImportQuestionRequest> out = new ArrayList<>(raw.size());
+        for (ImportQuestionRequest q : raw) {
+            if (q == null || q.text() == null) continue;
+            String norm = q.text().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+            if (seen.add(norm)) out.add(q);
+        }
+        return out;
     }
 
     /** Extract questions from a screenshot/image via Claude vision. */
@@ -280,15 +315,40 @@ public class AnthropicExtractor {
      *  prefix parses as a valid JSON array. Returns null if no such
      *  boundary exists (the reply was cut off in the very first object). */
     private static String salvageTruncatedArray(String payload) {
-        for (int i = payload.length() - 1; i >= 0; i--) {
-            if (payload.charAt(i) != '}') continue;
-            int j = i + 1;
-            while (j < payload.length() && Character.isWhitespace(payload.charAt(j))) j++;
-            if (j < payload.length() && payload.charAt(j) == ',') {
-                return payload.substring(0, i + 1) + "]";
+        // Walk forward tracking brace depth INSIDE the top-level array.
+        // Depth = 1 immediately after the opening '[' (we're inside the
+        // array but outside any object). Every time depth returns to 1
+        // after entering an object, we've just finished a complete object
+        // — record the index of the closing '}'. The last such index is
+        // the safe truncation point: prefix + ']' is valid JSON.
+        //
+        // Robust against the regex-based "find last }," approach which
+        // missed cases where the truncation happened right after a '}'
+        // with no trailing comma (Claude was cut mid-array-separator).
+        int start = payload.indexOf('[');
+        if (start < 0) return null;
+        int depth = 0;
+        int lastBalancedObjectEnd = -1;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = start; i < payload.length(); i++) {
+            char c = payload.charAt(i);
+            if (inString) {
+                if (escape) { escape = false; }
+                else if (c == '\\') escape = true;
+                else if (c == '"') inString = false;
+                continue;
+            }
+            if (c == '"') { inString = true; continue; }
+            if (c == '[' || c == '{') depth++;
+            else if (c == ']' || c == '}') {
+                depth--;
+                // depth==1 right after a '}' closing a top-level object.
+                if (c == '}' && depth == 1) lastBalancedObjectEnd = i;
             }
         }
-        return null;
+        if (lastBalancedObjectEnd < 0) return null;
+        return payload.substring(0, lastBalancedObjectEnd + 1) + "]";
     }
 
     private ImportQuestionRequest nodeToQuestion(JsonNode node) {
