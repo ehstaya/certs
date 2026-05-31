@@ -1,11 +1,13 @@
 package com.sfquiz.service;
 
 import com.sfquiz.entity.Exam;
+import com.sfquiz.entity.ExamTopic;
 import com.sfquiz.entity.Question;
 import com.sfquiz.entity.TestAttempt;
 import com.sfquiz.entity.TestAttemptAnswer;
 import com.sfquiz.entity.User;
 import com.sfquiz.repository.ExamRepository;
+import com.sfquiz.repository.ExamTopicRepository;
 import com.sfquiz.repository.QuestionRepository;
 import com.sfquiz.repository.TestAttemptAnswerRepository;
 import com.sfquiz.repository.TestAttemptRepository;
@@ -29,17 +31,20 @@ public class TestAttemptService {
     private final ExamRepository exams;
     private final UserRepository users;
     private final QuestionRepository questions;
+    private final ExamTopicRepository examTopics;
 
     public TestAttemptService(TestAttemptRepository attempts,
                               TestAttemptAnswerRepository answerRepo,
                               ExamRepository exams,
                               UserRepository users,
-                              QuestionRepository questions) {
+                              QuestionRepository questions,
+                              ExamTopicRepository examTopics) {
         this.attempts = attempts;
         this.answerRepo = answerRepo;
         this.exams = exams;
         this.users = users;
         this.questions = questions;
+        this.examTopics = examTopics;
     }
 
     /** Per-question detail submitted alongside the summary on finalize.
@@ -373,6 +378,85 @@ public class TestAttemptService {
             try { out.add(Long.parseLong(part.trim())); } catch (NumberFormatException ignored) {}
         }
         return out;
+    }
+
+    /** One row in the per-attempt topic breakdown: an exam area + how many
+     *  of that area's questions the user answered correctly. {@code total}
+     *  counts every answered question in that area (correct + incorrect);
+     *  unanswered rows weren't persisted to TestAttemptAnswer so they
+     *  don't dilute the accuracy denominator. */
+    public record TopicStat(String topicKey, String name, int correct, int total, int accuracyPercent) {}
+
+    /** Best area + worst N areas for a single attempt, plus the full per-area
+     *  table for an optional detail view. Returns an empty breakdown when
+     *  the questions in the attempt have no topic populated (cert hasn't
+     *  been classified yet — TopicAutoClassifier kicks in past 100 Qs). */
+    public record AttemptTopicBreakdown(
+            List<TopicStat> rows,
+            TopicStat best,
+            List<TopicStat> worst,
+            int totalAnswered,
+            int totalTagged) {}
+
+    @Transactional(readOnly = true)
+    public AttemptTopicBreakdown topicBreakdownForAttempt(TestAttempt attempt) {
+        if (attempt == null || attempt.getExam() == null) {
+            return new AttemptTopicBreakdown(List.of(), null, List.of(), 0, 0);
+        }
+        // Pre-load the exam's topic list so we can resolve topicKey -> display
+        // name without a per-row lookup, and so areas the user didn't see in
+        // this attempt simply don't appear (vs. showing 0/0).
+        List<ExamTopic> topics = examTopics.findByExamOrderBySortOrderAscIdAsc(attempt.getExam());
+        java.util.Map<String, String> keyToName = new java.util.HashMap<>();
+        for (ExamTopic t : topics) keyToName.put(t.getTopicKey(), t.getName());
+
+        // correct[topicKey] / total[topicKey] accumulators.
+        java.util.Map<String, int[]> tally = new java.util.LinkedHashMap<>();
+        // Seed in canonical exam order so the rows render in the same order
+        // as the topic info shown at start-of-test.
+        for (ExamTopic t : topics) tally.put(t.getTopicKey(), new int[]{0, 0});
+
+        int totalAnswered = 0;
+        int totalTagged = 0;
+        for (TestAttemptAnswer r : answerRepo.findByAttemptOrderByIdAsc(attempt)) {
+            totalAnswered++;
+            Question q = r.getQuestion();
+            if (q == null) continue;
+            String topic = q.getTopic();
+            if (topic == null || topic.isBlank()) continue;
+            int[] bucket = tally.computeIfAbsent(topic, k -> new int[]{0, 0});
+            bucket[1]++;
+            if (r.isCorrect()) bucket[0]++;
+            totalTagged++;
+        }
+
+        List<TopicStat> rows = new ArrayList<>();
+        for (java.util.Map.Entry<String, int[]> e : tally.entrySet()) {
+            int correct = e.getValue()[0];
+            int total = e.getValue()[1];
+            if (total == 0) continue; // skip areas the user didn't see this attempt
+            int pct = (int) Math.round(100.0 * correct / total);
+            String name = keyToName.getOrDefault(e.getKey(), e.getKey());
+            rows.add(new TopicStat(e.getKey(), name, correct, total, pct));
+        }
+
+        // Best = highest accuracy; ties broken by largest sample (more
+        // confidence behind the number).
+        TopicStat best = rows.stream()
+                .max(java.util.Comparator
+                        .comparingInt(TopicStat::accuracyPercent)
+                        .thenComparingInt(TopicStat::total))
+                .orElse(null);
+        // Worst 3 = lowest accuracy first; ties broken by largest sample
+        // (a 0/2 area is less actionable than a 1/8 area at the same %).
+        List<TopicStat> worst = rows.stream()
+                .sorted(java.util.Comparator
+                        .comparingInt(TopicStat::accuracyPercent)
+                        .thenComparing(java.util.Comparator.comparingInt(TopicStat::total).reversed()))
+                .limit(3)
+                .toList();
+
+        return new AttemptTopicBreakdown(rows, best, worst, totalAnswered, totalTagged);
     }
 
     public List<ExamSummary> summaryByExamForUser(String userEmail) {

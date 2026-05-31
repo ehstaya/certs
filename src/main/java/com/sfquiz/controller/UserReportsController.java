@@ -119,6 +119,14 @@ public class UserReportsController {
         // most recent score at a glance after a Finish redirect.
         TestAttempt latestAttempt = all.isEmpty() ? null : all.get(all.size() - 1);
         model.addAttribute("latestAttempt", latestAttempt);
+        // Per-area accuracy for the latest attempt — drives the "you
+        // crushed Security but bombed Reports" panel. Empty when the
+        // cert's questions haven't been topic-classified yet (under
+        // the 100-Q threshold the auto-classifier waits for).
+        TestAttemptService.AttemptTopicBreakdown topicBreakdown = (latestAttempt == null)
+                ? new TestAttemptService.AttemptTopicBreakdown(List.of(), null, List.of(), 0, 0)
+                : attempts.topicBreakdownForAttempt(latestAttempt);
+        model.addAttribute("topicBreakdown", topicBreakdown);
         model.addAttribute("exams", exams);
         // Per-exam aggregate for the header cards.
         int avg = 0, best = 0, passedCount = 0;
