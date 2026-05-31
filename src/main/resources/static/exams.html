@@ -142,7 +142,9 @@
               '</div>' +
               '<div class="exam-card-actions">' +
                 '<a class="btn btn-primary" href="/topic-info.html?exam=' + slug + '&mode=practice">Practice ›</a>' +
-                '<a class="btn btn-exam" href="/topic-info.html?exam=' + slug + '&mode=exam"' +
+                // Real exam launches the quiz directly — no topic-info
+                // breakdown, just like sitting down at a proctored exam.
+                '<a class="btn btn-exam" href="/index.html?exam=' + slug + '&mode=exam"' +
                    ' title="Real-exam simulation: no feedback during the test, no skipping, no going back. Score + review only at the end.">Real exam ›</a>' +
               '</div>' +
               '<div class="exam-card-modehint">' +

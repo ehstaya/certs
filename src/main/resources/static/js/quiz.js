@@ -127,6 +127,20 @@
     bindActions();
     initResizer();
     initTimer();
+    applyExamModeUiLockdown();
+  }
+
+  /** Exam mode disables every control that would let a user pause, reset,
+   *  or reshuffle the test mid-flight — the only allowed actions are
+   *  answer the current question, advance to the next, or Finish.
+   *  Hidden (not just disabled) so they don't even appear as options. */
+  function applyExamModeUiLockdown() {
+    if (!isExamMode()) return;
+    const toHide = ["#timerToggle", "#timerReset", "#resetBtn"];
+    toHide.forEach(function (sel) {
+      const el = $(sel);
+      if (el) el.style.display = "none";
+    });
   }
 
   function applyExamBranding(meta) {
