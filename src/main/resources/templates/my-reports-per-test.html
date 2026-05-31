@@ -108,7 +108,7 @@
     </p>
     <div class="empty" th:if="${#lists.isEmpty(rows)}">No attempts on this test yet.</div>
     <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
-      <thead><tr><th>Finished</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th></tr></thead>
+      <thead><tr><th>Finished</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th><th>Retake</th></tr></thead>
       <tbody>
         <tr th:each="a : ${rows}">
           <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
@@ -134,6 +134,17 @@
           <td>
             <span th:classappend="${a.passed} ? 'pct-pill good' : 'pct-pill bad'"
                   th:text="${a.passed} ? 'PASS' : 'FAIL'">FAIL</span>
+          </td>
+          <td>
+            <!-- Retake-same-test: only available for attempts that captured
+                 their question set (post-feature rows). Legacy attempts
+                 don't have a snapshot so the column shows '—'. -->
+            <a th:if="${a.questionIds != null and not #strings.isEmpty(a.questionIds)}"
+               th:href="@{|/?retake=${a.id}|}"
+               class="btn btn-sm"
+               title="Take this same set of questions again — useful for spaced repetition.">↻ Retake</a>
+            <span th:unless="${a.questionIds != null and not #strings.isEmpty(a.questionIds)}"
+                  class="muted">—</span>
           </td>
         </tr>
       </tbody>

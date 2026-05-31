@@ -50,24 +50,59 @@
     return s && s.trim() ? s.trim() : null;
   }
 
+  /** Optional ?retake=<attemptId> on the URL — when present, the quiz loads
+   *  the EXACT question set from that prior attempt instead of taking a
+   *  fresh random sample from the bank. Lets a user practise the same 60
+   *  questions over and over for spaced repetition. */
+  function getRetakeAttemptId() {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("retake");
+    if (!s) return null;
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   async function init() {
     examSlug = getExamSlug();
-    if (!examSlug) { window.location.href = "/exams.html"; return; }
+    const retakeId = getRetakeAttemptId();
+    if (!examSlug && !retakeId) { window.location.href = "/exams.html"; return; }
     await loadCurrentUser();
     try {
-      const res = await fetch("/api/exams/" + encodeURIComponent(examSlug) + "/questions", { credentials: "same-origin" });
+      // Two load paths: ?retake=<id> pulls the exact question set saved
+      // on that previous attempt; otherwise normal random sample for the
+      // exam slug. Both return the same {exam, questions} payload shape.
+      const url = retakeId
+        ? "/api/test-attempts/" + retakeId + "/retake-questions"
+        : "/api/exams/" + encodeURIComponent(examSlug) + "/questions";
+      const res = await fetch(url, { credentials: "same-origin" });
       if (res.status === 401 || res.status === 403) { window.location.href = "/login"; return; }
-      if (res.status === 404) { window.location.href = "/exams.html"; return; }
+      if (res.status === 404 || res.status === 410) {
+        // Retake target is gone or not retakeable — fall back to a fresh
+        // sample on the same exam if we know the slug, else send them to
+        // the exams index.
+        window.location.href = examSlug ? ("/?exam=" + encodeURIComponent(examSlug)) : "/exams.html";
+        return;
+      }
       if (!res.ok) throw new Error("Failed to load questions");
       const data = await res.json();
       const meta = data.exam || {};
+      // For retakes we adopt the exam slug from the attempt's stored exam
+      // so the timer / branding / submit endpoints all keep working.
+      if (!examSlug && meta.slug) examSlug = meta.slug;
       practiceCount = meta.questionsPerSession && meta.questionsPerSession > 0 ? meta.questionsPerSession : 60;
       TOTAL_MS = (meta.durationMinutes && meta.durationMinutes > 0 ? meta.durationMinutes : 90) * 60 * 1000;
       PASSING_PCT = (meta.passingScorePercent && meta.passingScorePercent > 0) ? meta.passingScorePercent : 65;
       applyExamBranding(meta);
       const all = Array.isArray(data.questions) ? data.questions : [];
-      shuffleInPlace(all);
-      state.questions = all.slice(0, practiceCount);
+      if (retakeId) {
+        // Retake: keep the exact order the attempt stored. The user can
+        // still use the in-session Reset button to reshuffle, but the
+        // initial replay preserves the original sequence.
+        state.questions = all;
+      } else {
+        shuffleInPlace(all);
+        state.questions = all.slice(0, practiceCount);
+      }
       state.questions.forEach((q, i) => { q.number = i + 1; });
     } catch (e) {
       $("#qText").textContent = "Failed to load questions: " + e.message;
@@ -711,6 +746,9 @@
         correctCount: correctCount,
         incorrectCount: incorrect,
         unansweredCount: unanswered,
+        // Snapshot of the exact set + order served this session, so the
+        // user can retake this same test later via /index.html?retake=<id>.
+        questionIds: state.questions.map(function (q) { return q.id; }),
         answers: answers,
       }),
     }).catch(function () { /* don't block UX on a recording failure */ });

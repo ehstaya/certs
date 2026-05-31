@@ -62,6 +62,15 @@ public class TestAttempt {
     @Column(name = "passed", nullable = false)
     private boolean passed;
 
+    /** Comma-separated list of question IDs that made up this attempt, in
+     *  the order they were originally served. Drives the "Retake same test"
+     *  flow — when the user wants to retake this exact set, we re-fetch
+     *  these specific question rows instead of taking a fresh random sample
+     *  from the bank. Nullable on legacy rows (pre-feature attempts can't
+     *  be retaken — the link is hidden in the UI for those). */
+    @Column(name = "question_ids", columnDefinition = "TEXT")
+    private String questionIds;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public User getUser() { return user; }
@@ -88,4 +97,6 @@ public class TestAttempt {
     public void setPassingScorePercent(int passingScorePercent) { this.passingScorePercent = passingScorePercent; }
     public boolean isPassed() { return passed; }
     public void setPassed(boolean passed) { this.passed = passed; }
+    public String getQuestionIds() { return questionIds; }
+    public void setQuestionIds(String questionIds) { this.questionIds = questionIds; }
 }

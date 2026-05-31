@@ -52,7 +52,10 @@ public class TestAttemptService {
             boolean correct
     ) {}
 
-    /** Server-validated input shape from the quiz UI's finalize-test POST. */
+    /** Server-validated input shape from the quiz UI's finalize-test POST.
+     *  {@code questionIds} captures the EXACT set of questions served in
+     *  the order they were rendered — drives the "Retake same test" flow
+     *  by letting us re-serve the same set instead of a fresh random sample. */
     public record RecordRequest(
             String examSlug,
             Instant startedAt,
@@ -61,6 +64,7 @@ public class TestAttemptService {
             int correctCount,
             int incorrectCount,
             int unansweredCount,
+            List<Long> questionIds,
             List<AnswerDetail> answers
     ) {}
 
@@ -90,6 +94,20 @@ public class TestAttemptService {
         a.setScorePercent(score);
         a.setPassingScorePercent(e.getPassingScorePercent());
         a.setPassed(score >= e.getPassingScorePercent());
+
+        // Snapshot the original question set so the user can re-attempt
+        // this exact test later via /index.html?retake=<id>. Stored as
+        // a comma-separated list of ids — compact, ordered, no JSON
+        // parsing needed when we replay them.
+        if (req.questionIds() != null && !req.questionIds().isEmpty()) {
+            StringBuilder ids = new StringBuilder();
+            for (Long id : req.questionIds()) {
+                if (id == null) continue;
+                if (ids.length() > 0) ids.append(',');
+                ids.append(id);
+            }
+            a.setQuestionIds(ids.length() == 0 ? null : ids.toString());
+        }
 
         attempts.save(a);
 
@@ -184,6 +202,10 @@ public class TestAttemptService {
             int scorePercent,
             boolean passed,
             java.time.Instant finishedAt,
+            /** True when this attempt captured its question set and can be
+             *  retaken via /?retake=<attemptId>. Pre-feature legacy rows
+             *  return false and the UI hides the Retake button. */
+            boolean retakeable,
             List<AttemptAnswerDetail> items,
             // Pagination metadata for the detail page.
             int page,           // current page (1-based for the URL)
@@ -202,6 +224,24 @@ public class TestAttemptService {
      *  Read-only @Transactional so the lazy {@code TestAttempt.user} proxy
      *  stays initializable for the duration of the ownership check + the
      *  per-answer Question/Choice walks the template later does. */
+    /** Ownership-checked attempt lookup for the retake flow. Returns the
+     *  attempt if it exists AND belongs to {@code userEmail}; returns null
+     *  otherwise (so a 404 is indistinguishable between "doesn't exist"
+     *  and "belongs to someone else" — no info leak by id-guessing).
+     *  Read-only @Transactional so the lazy {@code TestAttempt.exam} +
+     *  {@code TestAttempt.user} associations stay loadable in the caller. */
+    @Transactional(readOnly = true)
+    public TestAttempt findOwnedById(Long attemptId, String userEmail) {
+        if (attemptId == null || userEmail == null) return null;
+        TestAttempt a = attempts.findById(attemptId).orElse(null);
+        if (a == null || a.getUser() == null) return null;
+        if (!a.getUser().getEmail().equalsIgnoreCase(userEmail)) return null;
+        // Touch the lazy exam association so it's initialized before the
+        // session closes and the caller serializes the DTO.
+        if (a.getExam() != null) a.getExam().getName();
+        return a;
+    }
+
     @Transactional(readOnly = true)
     public AttemptDetailView attemptDetail(String userEmail, Long attemptId,
                                            String filter, int page, int pageSize) {
@@ -261,6 +301,7 @@ public class TestAttemptService {
                     correctPicks,
                     r.isCorrect()));
         }
+        boolean retakeable = a.getQuestionIds() != null && !a.getQuestionIds().isBlank();
         return new AttemptDetailView(
                 a.getId(),
                 a.getExam() == null ? "" : a.getExam().getSlug(),
@@ -268,7 +309,9 @@ public class TestAttemptService {
                 a.getTotalQuestions(), a.getCorrectCount(),
                 a.getIncorrectCount(), a.getUnansweredCount(),
                 a.getScorePercent(), a.isPassed(),
-                a.getFinishedAt(), items,
+                a.getFinishedAt(),
+                retakeable,
+                items,
                 page, pageSize, totalItems, totalPages);
     }
 

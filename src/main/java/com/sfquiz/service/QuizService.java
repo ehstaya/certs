@@ -42,6 +42,37 @@ public class QuizService {
         this.randomizer = randomizer;
     }
 
+    /** Replay the exact question set captured on a previous attempt — the
+     *  "Retake same test" flow. Loads each Question by id (in stored
+     *  order), drops any that were retired or hard-deleted since the
+     *  attempt was recorded, then runs the same name-substitution
+     *  randomizer so company aliases stay consistent within this
+     *  re-session. Caller is responsible for ownership / permission. */
+    public List<QuestionDto> listForRetake(List<Long> questionIds) {
+        if (questionIds == null || questionIds.isEmpty()) return List.of();
+        // Build a one-shot id → Question map so we serve them in the
+        // attempt's original order even though findAllById returns them
+        // in whatever order JPA likes.
+        List<Question> rows = repo.findAllById(questionIds);
+        Map<Long, Question> byId = new HashMap<>(rows.size());
+        for (Question q : rows) byId.put(q.getId(), q);
+
+        List<Question> ordered = new ArrayList<>(questionIds.size());
+        for (Long id : questionIds) {
+            Question q = byId.get(id);
+            // Skip retired/rejected — keep approved ones. A question that
+            // was approved at the time of the original attempt may since
+            // have been retired; we just drop those from the retake.
+            if (q == null) continue;
+            if (q.getStatus() != Question.Status.APPROVED) continue;
+            ordered.add(q);
+        }
+        Map<String, String> nameMap = randomizer.buildSessionNameMap();
+        return ordered.stream()
+                .map(q -> randomizer.randomize(q, nameMap))
+                .collect(Collectors.toList());
+    }
+
     /** Returns a topic-weighted random sample sized to {@code exam.questionsPerSession}.
      *  Falls back to a uniform random sample if topics aren't defined or no questions
      *  are tagged yet. PENDING/REJECTED questions are never served. */

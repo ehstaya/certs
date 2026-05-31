@@ -140,6 +140,17 @@
       Review the explanations to lock in what you got right and learn from what you missed.
     </p>
 
+    <!-- Retake-same-test entry point. Only shown for attempts that captured
+         a question snapshot — legacy attempts can't replay the exact set. -->
+    <p th:if="${detail.retakeable}" style="margin: 8px 0 16px;">
+      <a class="btn btn-primary" th:href="@{|/?retake=${detail.attemptId}|}">
+        ↻ Retake this exact test
+      </a>
+      <span class="muted" style="margin-left:10px; font-size:13px;">
+        Same questions, in their original order — a fresh attempt is recorded.
+      </span>
+    </p>
+
     <section class="attempt-summary">
       <div>
         <div class="meta-label">Score</div>
