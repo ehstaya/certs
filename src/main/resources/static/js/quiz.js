@@ -972,53 +972,29 @@
     state.finished = true;
     setFinishLocked(true);
 
-    // EXAM mode — bypass the in-page results panel entirely. Save the
-    // attempt and redirect straight to the My reports per-test page so
-    // the user reviews their score there. The Finish confirm already
-    // covered "are you sure?" with a Cancel option; once they confirmed
-    // there's no second screen to navigate around in.
-    if (isExamMode()) {
-      // Show a small inline overlay so the user knows something is
-      // happening while the POST goes out (usually <300ms).
-      showExamSavingOverlay();
-      recordAttempt(total, correctCount, incorrect, unanswered)
-        .catch(function () { /* swallow — redirect anyway, see below */ })
-        .then(function () {
-          // Release the nav lock so the redirect can leave the page
-          // without tripping the beforeunload trap.
-          releaseExamNavigationLock();
-          const slug = examSlug ? "?exam=" + encodeURIComponent(examSlug) : "";
-          window.location.href = "/my/reports/per-test" + slug;
-        });
-      return;
-    }
-
-    // PRACTICE mode — keep the existing in-page results panel flow.
-    $("#resScore").textContent = scorePct + "%";
-    $("#resScoreLabel").textContent = "Score (" + correctCount + " of " + total + " correct)";
-    $("#resCompleted").textContent = completed + " / " + total;
-    $("#resCorrect").textContent = String(correctCount);
-    $("#resIncorrect").textContent = String(incorrect);
-    $("#resUnanswered").textContent = String(unanswered);
-
-    const banner2 = $("#passFailBanner");
-    banner2.classList.remove("hidden", "pass", "fail");
-    banner2.classList.add(passed ? "pass" : "fail");
-    $("#passFailPill").textContent = passed ? "PASS" : "FAIL";
-    $("#passFailDetail").textContent = passed
-      ? "Your " + scorePct + "% beats the " + PASSING_PCT + "% passing score."
-      : "You scored " + scorePct + "% — the passing score is " + PASSING_PCT + "%. Reset to try again.";
-
-    $("#quizArea").classList.add("hidden");
-    $("#resultsPanel").classList.remove("hidden");
-    document.querySelector(".main-body").scrollTo({ top: 0, behavior: "smooth" });
-
-    recordAttempt(total, correctCount, incorrect, unanswered);
+    // Both modes — bypass the in-page results panel and redirect to
+    // /my/reports/per-test so the user sees:
+    //   1. A hero card with the just-finished attempt's score / pass /
+    //      breakdown (driven by latestAttempt on the per-test page),
+    //   2. The dashboard of all their attempts on this test below.
+    // The Finish confirm already covered "are you sure?" with a Cancel
+    // option; once confirmed there's no second screen to navigate.
+    showExamSavingOverlay();
+    recordAttempt(total, correctCount, incorrect, unanswered)
+      .catch(function () { /* swallow — redirect anyway */ })
+      .then(function () {
+        // Release the (exam-mode) nav lock if it was active, so the
+        // redirect doesn't trip the beforeunload trap. Practice mode
+        // never sets the lock so this is a no-op there.
+        releaseExamNavigationLock();
+        const slug = examSlug ? "?exam=" + encodeURIComponent(examSlug) : "";
+        window.location.href = "/my/reports/per-test" + slug;
+      });
   }
 
-  /** Brief full-screen veil while recordAttempt POSTs after an exam
-   *  Finish — keeps the user oriented during the ~300ms before the
-   *  redirect to My reports. Inserted lazily into <body>. */
+  /** Brief full-screen veil while recordAttempt POSTs after Finish —
+   *  keeps the user oriented during the ~300ms before the redirect to
+   *  My reports. Inserted lazily into <body>. */
   function showExamSavingOverlay() {
     if (document.getElementById("examSavingOverlay")) return;
     const overlay = document.createElement("div");
@@ -1027,10 +1003,11 @@
       "position:fixed; inset:0; background:rgba(255,255,255,0.92); z-index:9999;" +
       "display:flex; align-items:center; justify-content:center; flex-direction:column;" +
       "gap:8px; color:#374151; font-size:15px; font-weight:500;";
+    const label = isExamMode() ? "Saving your exam…" : "Saving your attempt…";
     overlay.innerHTML =
       '<div style="font-size:28px;">⏳</div>' +
-      '<div>Saving your exam…</div>' +
-      '<div style="font-size:12px; color:#6b7280;">You\'ll be taken to My reports.</div>';
+      '<div>' + label + '</div>' +
+      '<div style="font-size:12px; color:#6b7280;">You\'ll be taken to your reports.</div>';
     document.body.appendChild(overlay);
   }
 

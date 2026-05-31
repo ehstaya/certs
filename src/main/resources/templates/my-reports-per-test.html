@@ -69,6 +69,72 @@
       </label>
     </form>
 
+    <!-- Latest attempt hero — first thing the user sees after Finish so
+         the "what did I just score" answer is immediate. Hidden when
+         there are no attempts on this exam yet. -->
+    <section th:if="${latestAttempt != null}"
+             style="margin: 4px 0 22px; padding: 18px 22px; border-radius: 10px; border: 1px solid var(--gray-200, #e5e7eb); background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%); box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 18px rgba(15,23,42,.05);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom: 10px;">
+        <div>
+          <div style="font-size: 12px; color: var(--gray-600,#4b5563); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Latest attempt</div>
+          <div style="font-size: 13px; color: var(--gray-700, #374151); margin-top: 2px;">
+            Finished <strong th:text="${#temporals.format(latestAttempt.finishedAt, 'yyyy-MM-dd HH:mm')}">—</strong> ·
+            <span th:if="${latestAttempt.mode != null and latestAttempt.mode.name() == 'EXAM'}"
+                  style="display:inline-block; padding:1px 7px; border-radius:999px; background:#fef3c7; color:#92400e; font-size:11px; font-weight:600; letter-spacing:.3px;">REAL EXAM</span>
+            <span th:unless="${latestAttempt.mode != null and latestAttempt.mode.name() == 'EXAM'}"
+                  style="display:inline-block; padding:1px 7px; border-radius:999px; background:#e0f2fe; color:#075985; font-size:11px; font-weight:600; letter-spacing:.3px;">PRACTICE</span>
+          </div>
+        </div>
+        <div>
+          <span th:classappend="${latestAttempt.passed} ? 'pct-pill good' : 'pct-pill bad'"
+                style="font-size: 14px; padding: 4px 12px;"
+                th:text="${latestAttempt.passed} ? 'PASS' : 'FAIL'">FAIL</span>
+        </div>
+      </div>
+
+      <!-- Big score, then the breakdown. -->
+      <div style="display:flex; gap: 28px; align-items: center; flex-wrap: wrap;">
+        <div>
+          <div th:text="${latestAttempt.scorePercent + '%'}"
+               th:style="${latestAttempt.passed} ? 'font-size: 48px; font-weight: 700; color: #047857; line-height:1;' : 'font-size: 48px; font-weight: 700; color: #b91c1c; line-height:1;'">0%</div>
+          <div class="muted" style="font-size: 12px; margin-top: 4px;"
+               th:text="|Passing score: ${latestAttempt.passingScorePercent}%|">Passing: 65%</div>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(4, minmax(80px, 1fr)); gap: 14px; flex: 1; min-width: 320px;">
+          <div>
+            <div style="font-size:11px; color: var(--gray-600,#4b5563); text-transform: uppercase; letter-spacing:.4px;">Correct</div>
+            <div style="font-size: 22px; font-weight: 700; color: #047857;" th:text="${latestAttempt.correctCount}">0</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color: var(--gray-600,#4b5563); text-transform: uppercase; letter-spacing:.4px;">Incorrect</div>
+            <div style="font-size: 22px; font-weight: 700; color: #b91c1c;" th:text="${latestAttempt.incorrectCount}">0</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color: var(--gray-600,#4b5563); text-transform: uppercase; letter-spacing:.4px;">Unanswered</div>
+            <div style="font-size: 22px; font-weight: 700; color: var(--gray-700,#374151);" th:text="${latestAttempt.unansweredCount}">0</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color: var(--gray-600,#4b5563); text-transform: uppercase; letter-spacing:.4px;">Time</div>
+            <div style="font-size: 22px; font-weight: 700; color: var(--gray-700,#374151);"
+                 th:text="${(latestAttempt.durationSeconds / 60) + 'm ' + (latestAttempt.durationSeconds % 60) + 's'}">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick action — drill into the questions for review. -->
+      <div style="margin-top: 14px; display:flex; gap: 10px; flex-wrap: wrap;">
+        <a class="btn btn-primary btn-sm"
+           th:href="@{|/my/reports/attempts/${latestAttempt.id}|}">Review questions →</a>
+        <a class="btn btn-sm"
+           th:if="${latestAttempt.mode != null and latestAttempt.mode.name() == 'EXAM'}"
+           th:href="@{|/?retake=${latestAttempt.id}&mode=exam|}">↻ Retake (real exam)</a>
+        <a class="btn btn-sm"
+           th:unless="${latestAttempt.mode != null and latestAttempt.mode.name() == 'EXAM'}"
+           th:href="@{|/?retake=${latestAttempt.id}|}">↻ Retake (practice)</a>
+      </div>
+    </section>
+
+    <h2 style="margin-top: 0; font-size: 16px; color: var(--gray-700, #374151);">Across all your attempts on this test</h2>
     <section class="dashboard-cards">
       <div class="dash-card">
         <div class="dash-card-label">Attempts</div>

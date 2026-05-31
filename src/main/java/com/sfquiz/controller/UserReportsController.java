@@ -114,6 +114,11 @@ public class UserReportsController {
         model.addAttribute("practiceCountTotal", practiceN);
         model.addAttribute("examCountTotal", examN);
         model.addAttribute("allCountTotal", all.size());
+        // Latest attempt (from the unfiltered chronological list) — drives
+        // the hero card at the top of the page so the user sees their
+        // most recent score at a glance after a Finish redirect.
+        TestAttempt latestAttempt = all.isEmpty() ? null : all.get(all.size() - 1);
+        model.addAttribute("latestAttempt", latestAttempt);
         model.addAttribute("exams", exams);
         // Per-exam aggregate for the header cards.
         int avg = 0, best = 0, passedCount = 0;
