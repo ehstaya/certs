@@ -41,6 +41,7 @@
 
   let pendingConfirm = null;
   let pendingAlt = null;
+  let pendingCancel = null;
   let confirmReturnTo = "quiz"; // "quiz" | "results"
 
   let TOTAL_MS = 90 * 60 * 1000;   // exam duration, overridden from metadata
@@ -842,10 +843,10 @@
 
     const completed = countCompleted();
     const total = state.questions.length;
-    // EXAM mode: as soon as the user clicks Finish, lock everything
-    // else down. Even if they cancel the confirm, the only path forward
-    // is Finish — they can't go back to answering. Matches a proctored
-    // exam's "I've signalled I'm done" semantics.
+    // EXAM mode: lock the action bar to "only Finish" while the confirm
+    // is open, so the user can't go back to answering while they're
+    // deciding. If they cancel, we release the lockdown — clicking
+    // Finish was an exploratory action, not a commitment.
     if (isExamMode()) {
       state.finishInitiated = true;
       applyExamFinishOnlyLockdown();
@@ -859,7 +860,38 @@
           "only Reset will let you retake the test.",
       confirmLabel: "Finish test",
       onConfirm: () => { hideConfirmPanel(); finalizeTest(); },
+      onCancel: () => {
+        // Restore the in-question controls so the user can keep
+        // answering. Only fires in exam mode — practice mode never
+        // applies the lockdown in the first place.
+        if (isExamMode()) {
+          state.finishInitiated = false;
+          releaseExamFinishOnlyLockdown();
+        }
+      },
     });
+  }
+
+  /** Reverse applyExamFinishOnlyLockdown — bring back the in-question
+   *  controls so the user can continue answering. Called from the
+   *  Finish confirm's onCancel; renderQuestion paints the right
+   *  enabled / disabled / hidden state from scratch so we don't need
+   *  to undo each style mutation manually. */
+  function releaseExamFinishOnlyLockdown() {
+    const notice = document.getElementById("examFinishNotice");
+    if (notice && notice.parentNode) notice.parentNode.removeChild(notice);
+    // Show the action bar back. renderQuestion will set the right
+    // disabled / hidden state per mode for Submit / Back / Next /
+    // choices, including the exam-mode rules that hide Next and lock
+    // Back. We just need the elements to be visible again.
+    ["#submitBtn", "#backBtn", "#voteBar"].forEach(function (sel) {
+      const el = $(sel);
+      if (el) el.style.display = "";
+    });
+    document.querySelectorAll("#choices input").forEach(function (inp) {
+      inp.disabled = false;
+    });
+    renderQuestion();
   }
 
   /** Hide every in-question control (Submit, Back, Next, choice inputs,
@@ -1129,6 +1161,10 @@
     $("#confirmBody").textContent = opts.body;
     $("#confirmOkBtn").textContent = opts.confirmLabel || "Confirm";
     pendingConfirm = opts.onConfirm;
+    // Optional callback fired when the user clicks Cancel — lets the
+    // caller undo any pre-confirm side effects (e.g. exam-mode Finish
+    // sets a finish-only lockdown that has to be reversed on cancel).
+    pendingCancel = typeof opts.onCancel === "function" ? opts.onCancel : null;
     const altBtn = $("#confirmAltBtn");
     if (opts.altLabel && typeof opts.onAlt === "function") {
       altBtn.textContent = opts.altLabel;
@@ -1157,10 +1193,19 @@
     $("#confirmPanel").classList.add("hidden");
     pendingConfirm = null;
     pendingAlt = null;
+    pendingCancel = null;
     restoreFromConfirm();
   }
 
   function onConfirmCancel() {
+    // Fire the per-confirm cancel callback BEFORE hideConfirmPanel
+    // clears it. Used by exam-mode Finish to undo its finish-only
+    // lockdown when the user changes their mind.
+    const cb = pendingCancel;
+    pendingCancel = null;
+    if (typeof cb === "function") {
+      try { cb(); } catch (e) { /* never block the cancel itself */ }
+    }
     hideConfirmPanel();
   }
 
@@ -1202,6 +1247,7 @@
     const cb = pendingConfirm;
     pendingConfirm = null;
     pendingAlt = null;
+    pendingCancel = null;
     $("#confirmPanel").classList.add("hidden");
     // Restore the panel that was visible before we opened the confirm
     // (quiz or results). The callback can still transition to a
@@ -1215,6 +1261,7 @@
     const cb = pendingAlt;
     pendingAlt = null;
     pendingConfirm = null;
+    pendingCancel = null;
     $("#confirmPanel").classList.add("hidden");
     restoreFromConfirm();
     if (typeof cb === "function") cb();
