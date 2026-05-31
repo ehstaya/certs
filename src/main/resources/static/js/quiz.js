@@ -116,6 +116,8 @@
       state.questions.forEach((q, i) => { q.number = i + 1; });
     } catch (e) {
       $("#qText").textContent = "Failed to load questions: " + e.message;
+      // Drop the splash so the error text is visible instead of "Loading…".
+      document.body.classList.remove("quiz-booting");
       return;
     }
     state.questions.forEach((q) => state.answers.set(q.id, { selected: new Set(), submitted: false, correct: false, visited: false }));
@@ -128,6 +130,10 @@
     initResizer();
     initTimer();
     applyExamModeUiLockdown();
+    // Reveal the now-populated UI. Everything above is synchronous so
+    // by this point Q1 is fully painted into the DOM — the splash drops
+    // and the real content is already in place, no second flash.
+    document.body.classList.remove("quiz-booting");
   }
 
   /** Exam mode disables every control that would let a user pause, reset,

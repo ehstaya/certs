@@ -103,6 +103,34 @@ button { font-family: inherit; cursor: pointer; }
 .layout.exam-mode #sidebar,
 .layout.exam-mode #resizer { display: none; }
 
+/* Pre-render lockup — hides every placeholder element (the hardcoded
+   'Question 1', empty choices, Submit/Back/Next buttons, vote bar,
+   timer 90:00) until quiz.js has fetched the real questions and
+   finished its first renderQuestion. Without this the user sees a
+   skeleton page flash for ~200ms before the real content paints. The
+   booting class is set in <body> by default and removed in JS at the
+   end of init(). */
+body.quiz-booting #sidebar,
+body.quiz-booting #resizer,
+body.quiz-booting .main-header,
+body.quiz-booting #quizArea > * { visibility: hidden; }
+body.quiz-booting #quizArea {
+  position: relative;
+  min-height: 240px;
+}
+body.quiz-booting #quizArea::before {
+  visibility: visible;
+  content: "Loading questions…";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray-500, #6b7280);
+  font-size: 15px;
+  font-weight: 500;
+}
+
 /* Sidebar resizer (drag handle) */
 .resizer {
   background: transparent;
