@@ -95,6 +95,14 @@ public class StudyUpload {
     @Column(name = "error", length = 1024)
     private String error;
 
+    /** True when the user has explicitly archived a successfully-processed
+     *  upload — hides it from the default Recent uploads view without
+     *  losing the row (the file bytes + per-question audit are still
+     *  intact, retrievable via the Archived view). Default false. */
+    @org.hibernate.annotations.ColumnDefault("false")
+    @Column(name = "archived", nullable = false)
+    private boolean archived = false;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getOriginalName() { return originalName; }
@@ -129,4 +137,6 @@ public class StudyUpload {
     public void setQuestionsImported(Integer questionsImported) { this.questionsImported = questionsImported; }
     public String getError() { return error; }
     public void setError(String error) { this.error = error; }
+    public boolean isArchived() { return archived; }
+    public void setArchived(boolean archived) { this.archived = archived; }
 }

@@ -619,20 +619,33 @@
 
       <!-- =====================================================
            2. Recent uploads (report) — everything that doesn't
-           need action: DONE / PENDING / PROCESSING. Read-only
-           summary; admins can still delete if they need to.
+           need action: DONE / PENDING / PROCESSING. The status
+           column now shows the three plain-English checkpoints
+           the user cares about (Uploaded ✓ / Extracted ✓ / Inserted ✓)
+           instead of internal PENDING/PROCESSING/DONE jargon. The
+           action is Archive (file is preserved, just hidden from
+           the main view); Delete moves to the archived view.
            ===================================================== -->
       <div th:with="reported=${uploads.?[status.name() != 'FAILED' and status.name() != 'SKIPPED']}"
            th:if="${not #lists.isEmpty(reported)}"
            style="margin-top: 18px;">
-        <h2 style="display:flex; align-items:center; gap:10px;">
+        <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
           Recent uploads
           <span class="count" id="filesReportCount" th:text="'(' + ${#lists.size(reported)} + ')'">(0)</span>
           <span id="livePill" class="live-pill" title="Auto-updating every few seconds — no refresh needed">● live</span>
           <span class="muted" style="font-size: 12px; font-weight: normal;">Already added to the bank — admin reviews each question in /admin/questions.</span>
+          <a th:if="${archivedCount != null and archivedCount > 0}"
+             th:href="@{/uploads/archived}"
+             class="btn btn-secondary btn-sm"
+             style="margin-left: auto;"
+             th:text="|View archived (${archivedCount}) →|">View archived →</a>
         </h2>
+        <p class="muted" th:if="${archivedId != null}" style="font-size: 13px;">
+          Archived upload #<span th:text="${archivedId}">0</span> — it's tucked away in
+          <a th:href="@{/uploads/archived}">View archived</a> if you need it.
+        </p>
         <table class="admin-table">
-          <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Status</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Progress</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead>
           <tbody>
             <tr th:each="u : ${reported}">
               <td>
@@ -642,16 +655,31 @@
               <td th:text="${#temporals.format(u.uploadedAt, 'yyyy-MM-dd HH:mm')}">—</td>
               <td th:if="${isAdmin}" th:text="${u.uploadedByEmail != null ? u.uploadedByEmail : '—'}">—</td>
               <td>
-                <span th:switch="${u.status.name()}">
-                  <span th:case="'PENDING'"    class="pill pending">Pending</span>
-                  <span th:case="'PROCESSING'" class="pill processing">Extracting…</span>
-                  <span th:case="'DONE'"       class="pill done">Done</span>
-                </span>
-                <span th:if="${u.dumpSuspected}" class="pill dump"
-                      title="Claude flagged this as possible leaked exam content. Questions still flowed through to the admin review queue — admin will give them extra scrutiny.">⚠ Possible dump</span>
-                <span th:if="${u.duplicateOfUploadId != null}" class="pill dup"
-                      th:title="'Same file content as upload #' + ${u.duplicateOfUploadId} + '. Questions were extracted and re-queued; approving a duplicate question auto-retires the older approved version.'"
-                      th:text="'⤴ Re-upload of #' + ${u.duplicateOfUploadId}">⤴ Re-upload</span>
+                <!-- Three-stage progress chips. All uploads at this point
+                     are 'Uploaded' (file is in the system). 'Extracted'
+                     lights up once questionsExtracted > 0. 'Inserted'
+                     lights up once questionsImported > 0. A grey ⏳ chip
+                     marks anything still in flight. -->
+                <div style="display:flex; gap:4px; flex-wrap:wrap; font-size:11px; font-weight:600; letter-spacing:.3px;">
+                  <span style="padding:2px 8px; border-radius:999px; background:#d1fae5; color:#065f46;">UPLOADED ✓</span>
+                  <span th:if="${u.questionsExtracted != null and u.questionsExtracted > 0}"
+                        style="padding:2px 8px; border-radius:999px; background:#d1fae5; color:#065f46;">EXTRACTED ✓</span>
+                  <span th:unless="${u.questionsExtracted != null and u.questionsExtracted > 0}"
+                        th:style="${u.status.name() == 'DONE' ? 'padding:2px 8px; border-radius:999px; background:#f3f4f6; color:#4b5563;' : 'padding:2px 8px; border-radius:999px; background:#fef3c7; color:#92400e;'}"
+                        th:text="${u.status.name() == 'DONE' ? 'EXTRACTED 0' : 'EXTRACTING…'}">EXTRACTING…</span>
+                  <span th:if="${u.questionsImported != null and u.questionsImported > 0}"
+                        style="padding:2px 8px; border-radius:999px; background:#d1fae5; color:#065f46;">INSERTED ✓</span>
+                  <span th:unless="${u.questionsImported != null and u.questionsImported > 0}"
+                        th:style="${u.status.name() == 'DONE' ? 'padding:2px 8px; border-radius:999px; background:#f3f4f6; color:#4b5563;' : 'padding:2px 8px; border-radius:999px; background:#fef3c7; color:#92400e;'}"
+                        th:text="${u.status.name() == 'DONE' ? 'INSERTED 0' : 'WAITING'}">WAITING</span>
+                </div>
+                <div style="margin-top: 4px;">
+                  <span th:if="${u.dumpSuspected}" class="pill dump"
+                        title="Claude flagged this as possible leaked exam content. Admin will give it extra scrutiny.">⚠ Possible dump</span>
+                  <span th:if="${u.duplicateOfUploadId != null}" class="pill dup"
+                        th:title="'Same file content as upload #' + ${u.duplicateOfUploadId} + '.'"
+                        th:text="'⤴ Re-upload of #' + ${u.duplicateOfUploadId}">⤴ Re-upload</span>
+                </div>
               </td>
               <td>
                 <span th:if="${u.questionsImported != null}">
@@ -662,8 +690,14 @@
                 <span class="muted" th:unless="${u.questionsImported != null}">—</span>
               </td>
               <td class="actions-col">
-                <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
-                  <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                <!-- Archive is the success-path action — preserves the
+                     file but hides it from the main view. Available only
+                     once the file is processed (DONE); files still in
+                     flight (PENDING/PROCESSING) just get no action. -->
+                <form th:if="${u.status.name() == 'DONE'}"
+                      method="post" th:action="@{|/uploads/${u.id}/archive|}" style="display:inline">
+                  <button class="btn btn-secondary btn-sm" type="submit"
+                          title="Move this upload to the archive — preserves the file but removes it from the Recent uploads list.">📦 Archive</button>
                 </form>
               </td>
             </tr>
@@ -738,6 +772,51 @@
       }
       return html;
     }
+
+    /** Three-stage progress for the Recent uploads table: Uploaded ✓ →
+     *  Extracted ✓ → Inserted ✓. A grey 0-chip lights up if a stage
+     *  produced zero rows (e.g. Done, but Claude found nothing); an
+     *  amber 'in flight' chip lights up while the stage is still
+     *  running. Same chip set on the server-rendered table. */
+    function progressCell(r) {
+      const greenStyle  = 'padding:2px 8px; border-radius:999px; background:#d1fae5; color:#065f46;';
+      const greyStyle   = 'padding:2px 8px; border-radius:999px; background:#f3f4f6; color:#4b5563;';
+      const amberStyle  = 'padding:2px 8px; border-radius:999px; background:#fef3c7; color:#92400e;';
+      const isDone = r.status === "DONE";
+      const ext = (typeof r.questionsExtracted === "number") ? r.questionsExtracted : 0;
+      const imp = (typeof r.questionsImported  === "number") ? r.questionsImported  : 0;
+
+      let chips = '<div style="display:flex; gap:4px; flex-wrap:wrap; font-size:11px; font-weight:600; letter-spacing:.3px;">';
+      chips += '<span style="' + greenStyle + '">UPLOADED ✓</span>';
+
+      if (ext > 0) {
+        chips += '<span style="' + greenStyle + '">EXTRACTED ✓</span>';
+      } else if (isDone) {
+        chips += '<span style="' + greyStyle  + '">EXTRACTED 0</span>';
+      } else {
+        chips += '<span style="' + amberStyle + '">EXTRACTING…</span>';
+      }
+
+      if (imp > 0) {
+        chips += '<span style="' + greenStyle + '">INSERTED ✓</span>';
+      } else if (isDone) {
+        chips += '<span style="' + greyStyle  + '">INSERTED 0</span>';
+      } else {
+        chips += '<span style="' + amberStyle + '">WAITING</span>';
+      }
+      chips += '</div>';
+
+      let badges = '';
+      if (r.dumpSuspected) {
+        badges += ' <span class="pill dump" title="Claude flagged this as possible leaked exam content.">⚠ Possible dump</span>';
+      }
+      if (r.duplicateOfUploadId) {
+        const t = 'Same file content as upload #' + r.duplicateOfUploadId + '.';
+        badges += ' <span class="pill dup" title="' + esc(t) + '">⤴ Re-upload of #' + esc(r.duplicateOfUploadId) + '</span>';
+      }
+      if (badges) chips += '<div style="margin-top:4px;">' + badges + '</div>';
+      return chips;
+    }
     function render(rows) {
       if (!rows.length) {
         container.innerHTML = '<div class="empty">No uploads yet.</div>';
@@ -788,7 +867,7 @@
       if (reported.length) {
         html +=
           '<div style="margin-top:18px;">' +
-            '<h2 style="display:flex; align-items:center; gap:10px;">' +
+            '<h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">' +
               'Recent uploads ' +
               '<span class="count">(' + reported.length + ')</span>' +
               '<span class="live-pill active" title="Auto-updating">● live</span>' +
@@ -797,7 +876,7 @@
             '<table class="admin-table"><thead><tr>' +
               '<th>Name</th><th>Size</th><th>Uploaded</th>' +
               (isAdmin ? '<th>Uploaded by</th>' : '') +
-              '<th>Status</th><th>Questions</th><th class="actions-col">Actions</th>' +
+              '<th>Progress</th><th>Questions</th><th class="actions-col">Actions</th>' +
             '</tr></thead><tbody>';
         for (const r of reported) {
           html += '<tr>' +
@@ -805,12 +884,14 @@
             '<td>' + fmtSize(r.sizeBytes) + '</td>' +
             '<td>' + fmtTime(r.uploadedAt) + '</td>' +
             (isAdmin ? '<td>' + esc(r.uploadedByEmail || "—") + '</td>' : '') +
-            '<td>' + statusCell(r) + '</td>' +
+            '<td>' + progressCell(r) + '</td>' +
             '<td>' + questionsCell(r) + '</td>' +
             '<td class="actions-col">' +
-              '<form method="post" action="/uploads/' + r.id + '/delete" style="display:inline">' +
-                '<button class="btn btn-danger btn-sm" type="submit">Delete</button>' +
-              '</form>' +
+              (r.status === "DONE"
+                ? '<form method="post" action="/uploads/' + r.id + '/archive" style="display:inline">' +
+                    '<button class="btn btn-secondary btn-sm" type="submit" title="Archive: preserve the file but remove it from this list.">📦 Archive</button>' +
+                  '</form>'
+                : '') +
             '</td>' +
           '</tr>';
         }

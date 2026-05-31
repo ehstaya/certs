@@ -92,10 +92,17 @@ public class StudyUploadController {
     public String list(Authentication auth, Model model) {
         String email = currentEmail(auth);
         boolean admin = isAdmin(auth);
+        // Default view hides archived rows so successfully-processed
+        // uploads don't clutter the page once the user has confirmed
+        // they're happy with what landed in the bank.
         List<StudyUpload> rows = admin
-                ? uploads.findTop50ByOrderByUploadedAtDesc()
-                : uploads.findTop50ByUploadedByEmailIgnoreCaseOrderByUploadedAtDesc(email);
+                ? uploads.findTop50ByArchivedFalseOrderByUploadedAtDesc()
+                : uploads.findTop50ByUploadedByEmailIgnoreCaseAndArchivedFalseOrderByUploadedAtDesc(email);
+        long archivedCount = admin
+                ? uploads.findTop100ByArchivedTrueOrderByUploadedAtDesc().size()
+                : uploads.findTop100ByUploadedByEmailIgnoreCaseAndArchivedTrueOrderByUploadedAtDesc(email).size();
         model.addAttribute("uploads", rows);
+        model.addAttribute("archivedCount", archivedCount);
         model.addAttribute("isAdmin", admin);
         // Scope the cert dropdown to the caller's managed certs for domain
         // admins so they can't upload material against an exam they don't
@@ -335,6 +342,49 @@ public class StudyUploadController {
         return "redirect:/uploads?deleted";
     }
 
+    /** Archive a successfully-processed upload — flips the archived flag
+     *  so the row drops out of the main /uploads view but stays in the
+     *  database (byte content + question-action audit trail intact).
+     *  Retrievable from the dedicated /uploads/archived view. */
+    @PostMapping("/{id}/archive")
+    public String archive(@PathVariable Long id, Authentication auth, RedirectAttributes flash) {
+        StudyUpload u = uploads.findById(id).orElse(null);
+        if (u == null) return "redirect:/uploads";
+        checkCanMutate(u, auth);
+        u.setArchived(true);
+        uploads.save(u);
+        log.info("archived upload id={} name={} by={}", u.getId(), u.getOriginalName(), currentEmail(auth));
+        flash.addFlashAttribute("archivedId", id);
+        return "redirect:/uploads";
+    }
+
+    /** Restore an archived upload back into the main view. */
+    @PostMapping("/{id}/unarchive")
+    public String unarchive(@PathVariable Long id, Authentication auth, RedirectAttributes flash) {
+        StudyUpload u = uploads.findById(id).orElse(null);
+        if (u == null) return "redirect:/uploads/archived";
+        checkCanMutate(u, auth);
+        u.setArchived(false);
+        uploads.save(u);
+        flash.addFlashAttribute("unarchivedId", id);
+        return "redirect:/uploads/archived";
+    }
+
+    /** Dedicated archived-uploads view — same chrome as /uploads but
+     *  lists only archived rows, with an Unarchive action so admins
+     *  can pull anything back to the main page if they need to. */
+    @GetMapping("/archived")
+    public String archivedList(Authentication auth, Model model) {
+        String email = currentEmail(auth);
+        boolean admin = isAdmin(auth);
+        List<StudyUpload> rows = admin
+                ? uploads.findTop100ByArchivedTrueOrderByUploadedAtDesc()
+                : uploads.findTop100ByUploadedByEmailIgnoreCaseAndArchivedTrueOrderByUploadedAtDesc(email);
+        model.addAttribute("uploads", rows);
+        model.addAttribute("isAdmin", admin);
+        return "uploads-archived";
+    }
+
     @PostMapping("/{id}/retry")
     public String retry(@PathVariable Long id, Authentication auth, RedirectAttributes flash) {
         StudyUpload u = uploads.findById(id).orElse(null);
@@ -349,15 +399,15 @@ public class StudyUploadController {
 
     /** JSON snapshot of the current user's uploads — polled by uploads.html so
      *  the status pill (Pending → Extracting… → Done / Failed / Skipped) updates
-     *  in place without a full page reload. */
+     *  in place without a full page reload. Archived rows are filtered out. */
     @GetMapping(value = "/api/status", produces = "application/json")
     @org.springframework.web.bind.annotation.ResponseBody
     public java.util.Map<String, Object> apiStatus(Authentication auth) {
         String email = currentEmail(auth);
         boolean admin = isAdmin(auth);
         List<StudyUpload> rows = admin
-                ? uploads.findTop50ByOrderByUploadedAtDesc()
-                : uploads.findTop50ByUploadedByEmailIgnoreCaseOrderByUploadedAtDesc(email);
+                ? uploads.findTop50ByArchivedFalseOrderByUploadedAtDesc()
+                : uploads.findTop50ByUploadedByEmailIgnoreCaseAndArchivedFalseOrderByUploadedAtDesc(email);
         java.util.List<java.util.Map<String, Object>> dtos = new java.util.ArrayList<>(rows.size());
         for (StudyUpload u : rows) {
             java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();

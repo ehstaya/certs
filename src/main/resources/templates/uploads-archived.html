@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Archived uploads — Salesforce Admin Quiz</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="/js/confirm.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Certification Practice Playground</div>
+  <div class="topbar-actions">
+    <a class="topbar-link user-link" href="/">Exams</a>
+    <a class="topbar-link user-link" href="/my/reports">My reports</a>
+    <a class="topbar-link admin-only" href="/admin/questions" style="display:none">Question review</a>
+    <a class="topbar-link admin-only" href="/admin/reports" style="display:none">Admin reports</a>
+    <a class="topbar-link superadmin-only" href="/admin" style="display:none">Admin Dashboard</a>
+    <a class="topbar-link user-link" href="/uploads">Add questions</a>
+    <a class="topbar-link" href="/change-password">Change password</a>
+    <span class="topbar-user" id="userBadge"></span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="topbar-link as-btn">Sign out</button>
+    </form>
+  </div>
+</header>
+<script>
+(function(){
+  fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d||!d.authenticated) return;
+    const el=document.getElementById("userBadge");
+    if(!el) return;
+    const name=(d.fullName&&d.fullName.trim())?d.fullName:d.email;
+    el.textContent=name+" ("+(d.role||"USER")+")";
+    if(d.role==="ADMIN"){document.querySelectorAll(".admin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".superadmin-only").forEach(e=>e.style.display="");}
+    if(d.role==="SUPERADMIN"){document.querySelectorAll(".user-link").forEach(e=>e.style.display="none");}
+  });
+})();
+</script>
+
+<main class="admin-wrap">
+  <div style="display:flex; gap:10px; align-items:center; margin-bottom: 14px;">
+    <a href="/uploads" class="btn btn-secondary btn-sm">‹ Back to uploads</a>
+  </div>
+  <h1>📦 Archived uploads</h1>
+  <p class="uploads-hint">
+    Successfully-processed files you've archived. The bytes + per-question
+    audit trail are preserved here — you can unarchive any row to bring
+    it back to the main uploads view, or delete it permanently from the
+    database.
+  </p>
+
+  <p class="muted" th:if="${param.unarchivedId != null}">
+    Unarchived upload #<span th:text="${param.unarchivedId}">0</span> — find it on the main
+    <a href="/uploads">Uploads</a> page.
+  </p>
+
+  <section class="admin-section">
+    <h2>Archived <span class="count" th:text="'(' + ${#lists.size(uploads)} + ')'">(0)</span></h2>
+    <div class="empty" th:if="${#lists.isEmpty(uploads)}">No archived uploads.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(uploads)}">
+      <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead>
+      <tbody>
+        <tr th:each="u : ${uploads}">
+          <td>
+            <a th:href="@{|/uploads/${u.id}/download|}" th:text="${u.originalName}">file.pdf</a>
+          </td>
+          <td th:text="${#numbers.formatDecimal(u.sizeBytes / 1024.0, 1, 1) + ' KB'}">0 KB</td>
+          <td th:text="${#temporals.format(u.uploadedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td th:if="${isAdmin}" th:text="${u.uploadedByEmail != null ? u.uploadedByEmail : '—'}">—</td>
+          <td>
+            <span th:if="${u.questionsImported != null}">
+              <strong th:text="${u.questionsImported}">0</strong>
+              imported<span th:if="${u.questionsExtracted != null and u.questionsExtracted > u.questionsImported}"> /
+              <span th:text="${u.questionsExtracted}">0</span> extracted</span>
+            </span>
+            <span class="muted" th:unless="${u.questionsImported != null}">—</span>
+          </td>
+          <td class="actions-col">
+            <form method="post" th:action="@{|/uploads/${u.id}/unarchive|}" style="display:inline">
+              <button class="btn btn-secondary btn-sm" type="submit">↩ Unarchive</button>
+            </form>
+            <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
+              <button class="btn btn-danger btn-sm" type="submit"
+                      data-confirm-title="Delete permanently"
+                      data-confirm="Permanently delete this archived upload? The file bytes will be removed from the database — this can't be undone."
+                      data-confirm-ok="Delete">Delete</button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>
