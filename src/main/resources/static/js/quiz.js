@@ -15,6 +15,10 @@
     // Once we've POSTed an attempt for this finalize, don't repeat (the user
     // can hit Back to test → Finish again and re-record on each finalize).
     lastRecordedFinishAt: null,
+    // Exam-mode only: set when the user first clicks Finish. From that
+    // point the action bar is reduced to just the header Finish button —
+    // even if they cancel the confirm they can't go back to answering.
+    finishInitiated: false,
   };
 
   // Per-exam, set from exam metadata in init().
@@ -467,6 +471,12 @@
     // Refresh vote stats — but only in practice. In exam mode the vote
     // bar is hidden anyway and the network call is wasted.
     if (!isExamMode()) loadVoteStats(q.id);
+
+    // If the user already initiated Finish in exam mode, re-assert the
+    // finish-only lockdown. renderQuestion just re-enabled Submit / set
+    // Next text / etc., and we need to override that back to "only
+    // Finish is available".
+    if (isExamMode() && state.finishInitiated) applyExamFinishOnlyLockdown();
   }
 
   /* ===========================================================
@@ -817,6 +827,14 @@
 
     const completed = countCompleted();
     const total = state.questions.length;
+    // EXAM mode: as soon as the user clicks Finish, lock everything
+    // else down. Even if they cancel the confirm, the only path forward
+    // is Finish — they can't go back to answering. Matches a proctored
+    // exam's "I've signalled I'm done" semantics.
+    if (isExamMode()) {
+      state.finishInitiated = true;
+      applyExamFinishOnlyLockdown();
+    }
     showConfirmPanel({
       title: "Finish the test now?",
       body: completed < total
@@ -827,6 +845,37 @@
       confirmLabel: "Finish test",
       onConfirm: () => { hideConfirmPanel(); finalizeTest(); },
     });
+  }
+
+  /** Hide every in-question control (Submit, Back, Next, choice inputs,
+   *  voting) so only the top-of-page Finish button remains. Called once
+   *  in exam mode the moment Finish is first clicked — even if the
+   *  user cancels the confirm, this state persists so they can't go
+   *  back to answering. */
+  function applyExamFinishOnlyLockdown() {
+    const hideIds = ["#submitBtn", "#nextBtn", "#backBtn", "#voteBar"];
+    hideIds.forEach(function (sel) {
+      const el = $(sel);
+      if (el) el.style.display = "none";
+    });
+    // Lock the choice inputs so the user can't change their answer
+    // (or pick one if they hadn't yet).
+    document.querySelectorAll("#choices input").forEach(function (inp) {
+      inp.disabled = true;
+    });
+    // Replace the action bar with a clear message — gives the user
+    // a single, unmistakable next step.
+    const notice = document.getElementById("examFinishNotice");
+    if (!notice) {
+      const bar = document.querySelector(".actions-bar");
+      if (bar) {
+        const p = document.createElement("p");
+        p.id = "examFinishNotice";
+        p.style.cssText = "margin: 12px 0; padding: 10px 14px; background: #fef3c7; border-left: 3px solid #f59e0b; color: #92400e; font-size: 14px; border-radius: 6px;";
+        p.textContent = "You've initiated Finish. Click \"Finish test\" in the header to confirm — you can't return to answering.";
+        bar.parentNode.insertBefore(p, bar);
+      }
+    }
   }
 
   function finalizeTest() {
