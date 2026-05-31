@@ -1501,3 +1501,79 @@ body:has(.admin-wrap) {
               0 8px 24px rgba(15, 23, 42, 0.08);
   border-left: 3px solid var(--brand-primary);
 }
+
+/* Left-sidebar layout shared by /uploads and /uploads/archived (and any
+   future page that wants the same "do vs watch" split). Mirrors the
+   .reports-layout pattern. */
+.uploads-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 24px;
+  max-width: 1600px;
+  margin: 24px auto;
+  padding: 0 24px;
+}
+.uploads-nav {
+  background: #fff;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 10px;
+  padding: 12px 0;
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  font-size: 14px;
+}
+.uploads-nav-section {
+  font-size: 11px;
+  color: var(--gray-500, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  padding: 10px 18px 4px;
+}
+.uploads-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  color: var(--gray-700, #374151);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: background 0.12s ease;
+}
+.uploads-nav a:hover { background: var(--gray-50, #f9fafb); }
+.uploads-nav a.active {
+  background: var(--brand-tint, #EAF5FE);
+  border-left-color: var(--brand-primary, #0176D3);
+  color: var(--brand-navy, #032D60);
+  font-weight: 600;
+}
+/* Nested sub-link inside a section — slightly indented and quieter,
+   used for "Recent uploads" / "Archived files" under Status of uploads. */
+.uploads-nav a.sub {
+  padding-left: 32px;
+  font-size: 13px;
+}
+.uploads-nav .archive-count {
+  margin-left: auto;
+  background: var(--gray-100, #f3f4f6);
+  color: var(--gray-600, #4b5563);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+.uploads-content {
+  background: #fff;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 10px;
+  padding: 24px 28px;
+  min-width: 0;
+}
+.uploads-view { display: none; }
+.uploads-view.active { display: block; }
+
+@media (max-width: 768px) {
+  .uploads-layout { grid-template-columns: 1fr; padding: 0 12px; }
+  .uploads-nav { position: static; }
+}

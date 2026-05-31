@@ -367,7 +367,9 @@ public class StudyUploadController {
         u.setArchived(false);
         uploads.save(u);
         flash.addFlashAttribute("unarchivedId", id);
-        return "redirect:/uploads/archived";
+        // Land on Recent uploads so the user sees where the file went,
+        // rather than the now-empty slot in the archive list.
+        return "redirect:/uploads#status";
     }
 
     /** Dedicated archived-uploads view — same chrome as /uploads but

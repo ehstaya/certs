@@ -39,59 +39,69 @@
 })();
 </script>
 
-<main class="admin-wrap">
-  <div style="display:flex; gap:10px; align-items:center; margin-bottom: 14px;">
-    <a href="/uploads" class="btn btn-secondary btn-sm">‹ Back to uploads</a>
-  </div>
-  <h1>📦 Archived uploads</h1>
-  <p class="uploads-hint">
-    Successfully-processed files you've archived. The bytes + per-question
-    audit trail are preserved here — you can unarchive any row to bring
-    it back to the main uploads view, or delete it permanently from the
-    database.
-  </p>
+<div class="uploads-layout">
+  <aside class="uploads-nav" aria-label="Upload sections">
+    <div class="uploads-nav-section">Add questions</div>
+    <a href="/uploads#upload"><span aria-hidden="true">📤</span> Upload questions</a>
+    <div class="uploads-nav-section">Status of uploads</div>
+    <a href="/uploads#status" class="sub"><span aria-hidden="true">📊</span> Recent uploads</a>
+    <a th:href="@{/uploads/archived}" class="sub active">
+      <span aria-hidden="true">📦</span> Archived files
+      <span class="archive-count"
+            th:if="${uploads != null and not #lists.isEmpty(uploads)}"
+            th:text="${#lists.size(uploads)}">0</span>
+    </a>
+  </aside>
 
-  <p class="muted" th:if="${param.unarchivedId != null}">
-    Unarchived upload #<span th:text="${param.unarchivedId}">0</span> — find it on the main
-    <a href="/uploads">Uploads</a> page.
-  </p>
+  <main class="uploads-content">
+    <h1>📦 Archived uploads</h1>
+    <p class="uploads-hint">
+      Successfully-processed files you've archived. The bytes + per-question
+      audit trail are preserved here — you can download the original,
+      re-insert it back to the active uploads view, or delete it
+      permanently from the database.
+    </p>
 
-  <section class="admin-section">
-    <h2>Archived <span class="count" th:text="'(' + ${#lists.size(uploads)} + ')'">(0)</span></h2>
-    <div class="empty" th:if="${#lists.isEmpty(uploads)}">No archived uploads.</div>
-    <table class="admin-table" th:unless="${#lists.isEmpty(uploads)}">
-      <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead>
-      <tbody>
-        <tr th:each="u : ${uploads}">
-          <td>
-            <a th:href="@{|/uploads/${u.id}/download|}" th:text="${u.originalName}">file.pdf</a>
-          </td>
-          <td th:text="${#numbers.formatDecimal(u.sizeBytes / 1024.0, 1, 1) + ' KB'}">0 KB</td>
-          <td th:text="${#temporals.format(u.uploadedAt, 'yyyy-MM-dd HH:mm')}">—</td>
-          <td th:if="${isAdmin}" th:text="${u.uploadedByEmail != null ? u.uploadedByEmail : '—'}">—</td>
-          <td>
-            <span th:if="${u.questionsImported != null}">
-              <strong th:text="${u.questionsImported}">0</strong>
-              imported<span th:if="${u.questionsExtracted != null and u.questionsExtracted > u.questionsImported}"> /
-              <span th:text="${u.questionsExtracted}">0</span> extracted</span>
-            </span>
-            <span class="muted" th:unless="${u.questionsImported != null}">—</span>
-          </td>
-          <td class="actions-col">
-            <form method="post" th:action="@{|/uploads/${u.id}/unarchive|}" style="display:inline">
-              <button class="btn btn-secondary btn-sm" type="submit">↩ Unarchive</button>
-            </form>
-            <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
-              <button class="btn btn-danger btn-sm" type="submit"
-                      data-confirm-title="Delete permanently"
-                      data-confirm="Permanently delete this archived upload? The file bytes will be removed from the database — this can't be undone."
-                      data-confirm-ok="Delete">Delete</button>
-            </form>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
-</main>
+    <section class="admin-section">
+      <h2>Archived <span class="count" th:text="'(' + ${#lists.size(uploads)} + ')'">(0)</span></h2>
+      <div class="empty" th:if="${#lists.isEmpty(uploads)}">No archived uploads.</div>
+      <table class="admin-table" th:unless="${#lists.isEmpty(uploads)}">
+        <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead>
+        <tbody>
+          <tr th:each="u : ${uploads}">
+            <td>
+              <a th:href="@{|/uploads/${u.id}/download|}" th:text="${u.originalName}">file.pdf</a>
+            </td>
+            <td th:text="${#numbers.formatDecimal(u.sizeBytes / 1024.0, 1, 1) + ' KB'}">0 KB</td>
+            <td th:text="${#temporals.format(u.uploadedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+            <td th:if="${isAdmin}" th:text="${u.uploadedByEmail != null ? u.uploadedByEmail : '—'}">—</td>
+            <td>
+              <span th:if="${u.questionsImported != null}">
+                <strong th:text="${u.questionsImported}">0</strong>
+                imported<span th:if="${u.questionsExtracted != null and u.questionsExtracted > u.questionsImported}"> /
+                <span th:text="${u.questionsExtracted}">0</span> extracted</span>
+              </span>
+              <span class="muted" th:unless="${u.questionsImported != null}">—</span>
+            </td>
+            <td class="actions-col">
+              <a class="btn btn-secondary btn-sm" th:href="@{|/uploads/${u.id}/download|}"
+                 title="Download the original file bytes.">⬇ Download</a>
+              <form method="post" th:action="@{|/uploads/${u.id}/unarchive|}" style="display:inline">
+                <button class="btn btn-primary btn-sm" type="submit"
+                        title="Move this file back to Recent uploads — keeps all the audit trail intact.">↩ Re-insert</button>
+              </form>
+              <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
+                <button class="btn btn-danger btn-sm" type="submit"
+                        data-confirm-title="Delete permanently"
+                        data-confirm="Permanently delete this archived upload? The file bytes will be removed from the database — this can't be undone."
+                        data-confirm-ok="Delete">🗑 Delete forever</button>
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</div>
 </body>
 </html>
