@@ -15,8 +15,27 @@ import java.io.IOException;
 public class PageController {
 
     @GetMapping("/")
-    public void root(HttpServletResponse response) throws IOException {
-        // Authenticated users land on the exam picker, then choose a track.
+    public void root(@RequestParam(name = "retake", required = false) String retake,
+                     @RequestParam(name = "exam", required = false) String exam,
+                     HttpServletResponse response) throws IOException {
+        // If the URL carries a retake or exam param, the caller wants to
+        // launch the quiz directly — forward to index.html with the same
+        // query string instead of bouncing them through the exam picker.
+        // (Without this the picker eats the param and the Retake button
+        // looks broken.)
+        if (retake != null && !retake.isBlank()) {
+            response.sendRedirect("/index.html?retake=" +
+                    java.net.URLEncoder.encode(retake.trim(),
+                            java.nio.charset.StandardCharsets.UTF_8));
+            return;
+        }
+        if (exam != null && !exam.isBlank()) {
+            response.sendRedirect("/index.html?exam=" +
+                    java.net.URLEncoder.encode(exam.trim(),
+                            java.nio.charset.StandardCharsets.UTF_8));
+            return;
+        }
+        // Authenticated users with no explicit target land on the exam picker.
         response.sendRedirect("/exams.html");
     }
 
