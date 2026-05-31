@@ -865,14 +865,25 @@
       state.finishInitiated = true;
       applyExamFinishOnlyLockdown();
     }
+    // Body + confirm label wording: in exam mode, name the two options
+    // exactly as the user expects to see them — Finish test (saves +
+    // jumps to reports) or Return to test in progress (cancel). In
+    // practice, keep the existing softer copy.
+    const body = isExamMode()
+      ? (completed < total
+          ? "You've answered " + completed + " of " + total + ". Unanswered questions count as incorrect. " +
+            "Once you finish, the attempt is recorded and you'll be taken to your reports — you can't return to answering."
+          : "All " + total + " questions answered. Once you finish, the attempt is recorded and you'll be taken to your reports — you can't return to answering.")
+      : (completed < total
+          ? "You've answered " + completed + " of " + total + ". Unanswered questions count as incorrect. " +
+            "Once you finish, you can't return to the questions — only Reset will let you retake the test."
+          : "All " + total + " questions answered. Once you finish, you can't return to the questions — " +
+            "only Reset will let you retake the test.");
+
     showConfirmPanel({
       title: "Finish the test now?",
-      body: completed < total
-        ? "You've answered " + completed + " of " + total + ". Unanswered questions count as incorrect. " +
-          "Once you finish, you can't return to the questions — only Reset will let you retake the test."
-        : "All " + total + " questions answered. Once you finish, you can't return to the questions — " +
-          "only Reset will let you retake the test.",
-      confirmLabel: "Finish test",
+      body: body,
+      confirmLabel: isExamMode() ? "Finish test" : "Finish test",
       onConfirm: () => { hideConfirmPanel(); finalizeTest(); },
       onCancel: () => {
         // Restore the in-question controls so the user can keep
@@ -884,6 +895,13 @@
         }
       },
     });
+    // Relabel the Cancel button so the choices read as the user
+    // described: 'Finish test' (Ok) and 'Return to test in progress'
+    // (Cancel). Just in exam mode — practice keeps the default.
+    if (isExamMode()) {
+      const cancelBtn = document.getElementById("confirmCancelBtn");
+      if (cancelBtn) cancelBtn.textContent = "Return to test in progress";
+    }
   }
 
   /** Reverse applyExamFinishOnlyLockdown — bring back the in-question
@@ -949,7 +967,33 @@
     // Score is correct / total (not / completed) — unanswered counts against you,
     // matching the real-exam grading.
     const scorePct = total === 0 ? 0 : Math.round((correctCount / total) * 100);
+    const passed = scorePct >= PASSING_PCT;
 
+    state.finished = true;
+    setFinishLocked(true);
+
+    // EXAM mode — bypass the in-page results panel entirely. Save the
+    // attempt and redirect straight to the My reports per-test page so
+    // the user reviews their score there. The Finish confirm already
+    // covered "are you sure?" with a Cancel option; once they confirmed
+    // there's no second screen to navigate around in.
+    if (isExamMode()) {
+      // Show a small inline overlay so the user knows something is
+      // happening while the POST goes out (usually <300ms).
+      showExamSavingOverlay();
+      recordAttempt(total, correctCount, incorrect, unanswered)
+        .catch(function () { /* swallow — redirect anyway, see below */ })
+        .then(function () {
+          // Release the nav lock so the redirect can leave the page
+          // without tripping the beforeunload trap.
+          releaseExamNavigationLock();
+          const slug = examSlug ? "?exam=" + encodeURIComponent(examSlug) : "";
+          window.location.href = "/my/reports/per-test" + slug;
+        });
+      return;
+    }
+
+    // PRACTICE mode — keep the existing in-page results panel flow.
     $("#resScore").textContent = scorePct + "%";
     $("#resScoreLabel").textContent = "Score (" + correctCount + " of " + total + " correct)";
     $("#resCompleted").textContent = completed + " / " + total;
@@ -957,49 +1001,13 @@
     $("#resIncorrect").textContent = String(incorrect);
     $("#resUnanswered").textContent = String(unanswered);
 
-    const passed = scorePct >= PASSING_PCT;
-    const banner = $("#passFailBanner");
-    const pill = $("#passFailPill");
-    const detail = $("#passFailDetail");
-    banner.classList.remove("hidden", "pass", "fail");
-    banner.classList.add(passed ? "pass" : "fail");
-    pill.textContent = passed ? "PASS" : "FAIL";
-    detail.textContent = passed
+    const banner2 = $("#passFailBanner");
+    banner2.classList.remove("hidden", "pass", "fail");
+    banner2.classList.add(passed ? "pass" : "fail");
+    $("#passFailPill").textContent = passed ? "PASS" : "FAIL";
+    $("#passFailDetail").textContent = passed
       ? "Your " + scorePct + "% beats the " + PASSING_PCT + "% passing score."
       : "You scored " + scorePct + "% — the passing score is " + PASSING_PCT + "%. Reset to try again.";
-
-    state.finished = true;
-    setFinishLocked(true);
-    // EXAM mode: keep the topbar locked through the results screen so
-    // the proctored-exam feel doesn't break the moment Finish lands.
-    // The user exits through the dedicated "Exit exam" button on the
-    // results panel (revealed below), which releases the lock and routes
-    // them to their My reports detail page. PRACTICE mode never had
-    // the lock so this is a no-op for it.
-    if (!isExamMode()) releaseExamNavigationLock();
-    if (isExamMode()) {
-      // The finish is no longer "in flight" — clear the finish-only
-      // lockdown artifacts (yellow notice, disabled choice inputs)
-      // so 'Back to test' presents a clean review screen.
-      state.finishInitiated = false;
-      const notice = document.getElementById("examFinishNotice");
-      if (notice && notice.parentNode) notice.parentNode.removeChild(notice);
-      document.querySelectorAll("#choices input").forEach(function (inp) {
-        inp.disabled = false;
-      });
-      // Reveal the question-list sidebar again — review mode lets the
-      // user click through every question to see what they picked.
-      const layout = document.getElementById("layout");
-      if (layout) layout.classList.remove("exam-mode");
-      // Show the explicit exit button; hide Retest (you can't reset
-      // an exam, you have to exit and start a new one). Back to test
-      // now shows feedback (renderQuestion treats state.finished as
-      // "open the answers for review").
-      const exit = document.getElementById("examExitBtn");
-      const retest = document.getElementById("retestBtn");
-      if (exit) exit.style.display = "";
-      if (retest) retest.style.display = "none";
-    }
 
     $("#quizArea").classList.add("hidden");
     $("#resultsPanel").classList.remove("hidden");
@@ -1008,11 +1016,32 @@
     recordAttempt(total, correctCount, incorrect, unanswered);
   }
 
+  /** Brief full-screen veil while recordAttempt POSTs after an exam
+   *  Finish — keeps the user oriented during the ~300ms before the
+   *  redirect to My reports. Inserted lazily into <body>. */
+  function showExamSavingOverlay() {
+    if (document.getElementById("examSavingOverlay")) return;
+    const overlay = document.createElement("div");
+    overlay.id = "examSavingOverlay";
+    overlay.style.cssText =
+      "position:fixed; inset:0; background:rgba(255,255,255,0.92); z-index:9999;" +
+      "display:flex; align-items:center; justify-content:center; flex-direction:column;" +
+      "gap:8px; color:#374151; font-size:15px; font-weight:500;";
+    overlay.innerHTML =
+      '<div style="font-size:28px;">⏳</div>' +
+      '<div>Saving your exam…</div>' +
+      '<div style="font-size:12px; color:#6b7280;">You\'ll be taken to My reports.</div>';
+    document.body.appendChild(overlay);
+  }
+
+  /** Returns the fetch promise so callers (the exam-mode finalize) can
+   *  wait for the attempt to land before redirecting. Practice mode
+   *  still treats it as fire-and-forget. */
   function recordAttempt(total, correctCount, incorrect, unanswered) {
-    if (!examSlug) return;
+    if (!examSlug) return Promise.resolve();
     const finishedAt = new Date();
     // De-dupe: only POST once per finalize. Back-to-test → re-finalize records again.
-    if (state.lastRecordedFinishAt && (finishedAt - state.lastRecordedFinishAt) < 1000) return;
+    if (state.lastRecordedFinishAt && (finishedAt - state.lastRecordedFinishAt) < 1000) return Promise.resolve();
     state.lastRecordedFinishAt = finishedAt;
     const started = state.startedAt || finishedAt;
 
@@ -1030,7 +1059,7 @@
       });
     });
 
-    fetch("/api/test-attempts", {
+    return fetch("/api/test-attempts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -1220,6 +1249,11 @@
     pendingConfirm = null;
     pendingAlt = null;
     pendingCancel = null;
+    // Reset the Cancel button label — exam-mode Finish swaps it to
+    // 'Return to test in progress', and any subsequent confirm
+    // (skip warning, reset test) should start from the default.
+    const cancelBtn = document.getElementById("confirmCancelBtn");
+    if (cancelBtn) cancelBtn.textContent = "Cancel";
     restoreFromConfirm();
   }
 
