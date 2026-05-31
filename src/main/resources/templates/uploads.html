@@ -370,10 +370,12 @@
         <span>Source (optional)</span>
         <input type="text" name="title" placeholder="e.g., Trailhead Module 3 — Quizlet set 7" maxlength="80" disabled />
       </label>
-      <button class="btn btn-primary" type="submit" disabled>Submit pasted text</button>
-      <button class="btn btn-sm reset-form-btn" type="button" style="display:none"
-              title="Clear this form so you can use the other option instead">Clear &amp; switch</button>
-      <span class="gate-hint">Pick a test first.</span>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button class="btn btn-primary" type="submit" disabled>Submit pasted text</button>
+        <button class="btn btn-sm reset-form-btn" type="button" style="display:none"
+                title="Clear this form so you can use the other option instead">Clear &amp; switch</button>
+        <span class="gate-hint">Pick a test first.</span>
+      </div>
     </form>
   </section>
 
