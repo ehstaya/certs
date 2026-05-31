@@ -853,6 +853,23 @@ body.resizing * { cursor: col-resize !important; user-select: none !important; }
 .topbar .topbar-link + .topbar-link::before,
 .topbar .topbar-user + .topbar-link::before { content: none; }
 
+/* Real-exam navigation lockdown — once mode=exam is active and the
+   test isn't finished, every nav escape hatch in the topbar is hidden.
+   Brand + user badge stay so the user still has identity context, but
+   they can't leave the page short of finishing the test. The class is
+   removed in JS after finalizeTest so the post-test review screen
+   restores normal navigation. */
+body.exam-mode-active .topbar .topbar-link,
+body.exam-mode-active .topbar form { display: none; }
+body.exam-mode-active .topbar::after {
+  content: "🔒 Real exam in progress — finish to navigate";
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: auto;
+  padding-right: 16px;
+}
+
 .results-panel {
   max-width: 720px;
   margin: 8px auto 32px;

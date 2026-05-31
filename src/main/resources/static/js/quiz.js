@@ -145,6 +145,56 @@
     // proctored exam where you can't see "I've answered N of M".
     const layout = document.getElementById("layout");
     if (layout) layout.classList.add("exam-mode");
+    applyExamNavigationLock();
+  }
+
+  /** Block every navigation escape hatch while a real-exam run is in
+   *  flight. Three layers:
+   *   1. CSS class on <body> hides topbar nav links + the Sign-out form,
+   *      leaving only the brand + user badge so the user has identity
+   *      context but can't reach Exams / My reports / etc.
+   *   2. Browser Back button trap — push a duplicate history entry on
+   *      load, then re-push on every popstate so back is a no-op.
+   *   3. beforeunload prompt — reload / close-tab / typed-URL all
+   *      fire the browser's "Leave site?" confirmation.
+   *
+   *  All three are released in releaseExamNavigationLock() at finalize. */
+  let examNavLockActive = false;
+  function applyExamNavigationLock() {
+    if (examNavLockActive) return;
+    examNavLockActive = true;
+    document.body.classList.add("exam-mode-active");
+
+    // Browser Back: seed an extra history entry, then keep re-pushing
+    // it whenever the user tries to leave so they stay on the page.
+    try { history.pushState({ examLock: true }, "", location.href); } catch (e) { /* old browsers */ }
+    window.addEventListener("popstate", onExamPopState);
+
+    // Reload / close / nav-away — prompt before leaving.
+    window.addEventListener("beforeunload", onExamBeforeUnload);
+  }
+
+  function releaseExamNavigationLock() {
+    if (!examNavLockActive) return;
+    examNavLockActive = false;
+    document.body.classList.remove("exam-mode-active");
+    window.removeEventListener("popstate", onExamPopState);
+    window.removeEventListener("beforeunload", onExamBeforeUnload);
+  }
+
+  function onExamPopState() {
+    // Always cancel the back — push a fresh history entry to stay put.
+    if (!examNavLockActive) return;
+    try { history.pushState({ examLock: true }, "", location.href); } catch (e) { /* no-op */ }
+  }
+  function onExamBeforeUnload(e) {
+    if (!examNavLockActive) return undefined;
+    // Modern browsers ignore the message string and show their own
+    // generic copy, but setting returnValue is still required to
+    // trigger the dialog.
+    e.preventDefault();
+    e.returnValue = "Real exam in progress — leaving will lose your answers and won't record a finished attempt.";
+    return e.returnValue;
   }
 
   function applyExamBranding(meta) {
@@ -786,6 +836,10 @@
 
     state.finished = true;
     setFinishLocked(true);
+    // Exam mode locked every navigation path while the test was running.
+    // Now that the user has finished + their score is showing, restore
+    // normal topbar nav so they can leave the page / review later.
+    releaseExamNavigationLock();
 
     $("#quizArea").classList.add("hidden");
     $("#resultsPanel").classList.remove("hidden");
