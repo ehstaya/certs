@@ -424,17 +424,28 @@
 
     // Nav buttons.
     // EXAM mode: Back is always disabled (you can't revisit answered
-    // questions), and Next is disabled until the current answer is
-    // submitted (no skipping). PRACTICE mode keeps the existing freedom
-    // to skip/back-navigate.
+    // questions), Next is hidden entirely because Submit auto-advances
+    // (no separate click needed). The Submit button label also changes
+    // so the auto-advance behaviour is signaled clearly. PRACTICE mode
+    // keeps the existing freedom to skip/back-navigate.
     const nextBtn = $("#nextBtn");
+    const submitBtn = $("#submitBtn");
     const isLast = state.index === total - 1;
     if (isExamMode()) {
       $("#backBtn").disabled = true;
-      nextBtn.disabled = !ans.submitted;
+      // Hide the Next button — Submit auto-advances. Keeping it visible
+      // would just confuse the flow.
+      nextBtn.style.display = "none";
+      // Relabel Submit so the auto-advance is obvious. On the last
+      // question Submit closes out the test via the Finish confirm.
+      if (!ans.submitted && submitBtn) {
+        submitBtn.textContent = isLast ? "Submit & finish ›" : "Submit & next ›";
+      }
     } else {
+      nextBtn.style.display = "";
       $("#backBtn").disabled = state.index === 0;
       nextBtn.disabled = false;
+      if (submitBtn) submitBtn.textContent = "Submit answer";
     }
     // On the last question the Next button is repurposed as "Finish test"
     // so users don't have to scroll up to the small Finish button. The
@@ -717,6 +728,13 @@
       ans.helpUrl = data.helpUrl;
       renderSidebar();
       renderQuestion();
+      // EXAM mode: auto-advance after a successful submit. On the last
+      // question this opens the Finish confirm (data-role drives it).
+      // Small delay lets the submission visually register before the
+      // next question swaps in.
+      if (isExamMode()) {
+        setTimeout(function () { onNextClicked(); }, 200);
+      }
     } catch (e) {
       showTransientWarning("Could not submit: " + e.message);
     }
