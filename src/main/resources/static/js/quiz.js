@@ -428,10 +428,13 @@
     });
 
     // Banner / explanation / locked styling.
-    // In EXAM mode: never reveal correctness, explanation, or vote until
-    // the user finishes the test — this is the whole point of the mode.
+    // EXAM mode hides correctness, explanation and vote DURING the
+    // live test. Once state.finished flips (user clicked Finish), the
+    // test view becomes a review screen — feedback is revealed even
+    // in exam mode so the user can learn from what they got wrong.
+    const liveExam = isExamMode() && !state.finished;
     if (ans.submitted) {
-      if (isExamMode()) {
+      if (liveExam) {
         $("#resultBanner").classList.add("hidden");
         $("#explanationBox").classList.add("hidden");
         $("#voteBar").classList.add("hidden");
@@ -444,20 +447,19 @@
     } else {
       $("#resultBanner").classList.add("hidden");
       $("#explanationBox").classList.add("hidden");
-      if (isExamMode()) $("#voteBar").classList.add("hidden");
+      if (liveExam) $("#voteBar").classList.add("hidden");
       $("#submitBtn").disabled = timer.state === "expired";
     }
 
     // Nav buttons.
-    // EXAM mode: Back is always disabled (you can't revisit answered
-    // questions), Next is hidden entirely because Submit auto-advances
-    // (no separate click needed). The Submit button label also changes
-    // so the auto-advance behaviour is signaled clearly. PRACTICE mode
-    // keeps the existing freedom to skip/back-navigate.
+    // LIVE EXAM mode: Back disabled, Next hidden (Submit auto-advances),
+    // Submit relabelled. POST-FINISH review (state.finished == true):
+    // free Back/Next navigation, Submit hidden (everything's already
+    // submitted). PRACTICE mode keeps its existing skip/back freedom.
     const nextBtn = $("#nextBtn");
     const submitBtn = $("#submitBtn");
     const isLast = state.index === total - 1;
-    if (isExamMode()) {
+    if (liveExam) {
       $("#backBtn").disabled = true;
       // Hide the Next button — Submit auto-advances. Keeping it visible
       // would just confuse the flow.
@@ -467,11 +469,22 @@
       if (!ans.submitted && submitBtn) {
         submitBtn.textContent = isLast ? "Submit & finish ›" : "Submit & next ›";
       }
+      if (submitBtn) submitBtn.style.display = "";
+    } else if (state.finished) {
+      // Review mode after Finish — no more submitting. Free navigation.
+      nextBtn.style.display = "";
+      nextBtn.disabled = state.index === total - 1;
+      $("#backBtn").disabled = state.index === 0;
+      if (submitBtn) submitBtn.style.display = "none";
     } else {
+      // Practice mode default.
       nextBtn.style.display = "";
       $("#backBtn").disabled = state.index === 0;
       nextBtn.disabled = false;
-      if (submitBtn) submitBtn.textContent = "Submit answer";
+      if (submitBtn) {
+        submitBtn.style.display = "";
+        submitBtn.textContent = "Submit answer";
+      }
     }
     // On the last question the Next button is repurposed as "Finish test"
     // so users don't have to scroll up to the small Finish button. The
@@ -488,11 +501,10 @@
     // bar is hidden anyway and the network call is wasted.
     if (!isExamMode()) loadVoteStats(q.id);
 
-    // If the user already initiated Finish in exam mode, re-assert the
-    // finish-only lockdown. renderQuestion just re-enabled Submit / set
-    // Next text / etc., and we need to override that back to "only
-    // Finish is available".
-    if (isExamMode() && state.finishInitiated) applyExamFinishOnlyLockdown();
+    // If the user already initiated Finish in exam mode AND hasn't
+    // finalized yet, re-assert the finish-only lockdown. After finalize
+    // we're in review mode and the lockdown shouldn't fire.
+    if (isExamMode() && state.finishInitiated && !state.finished) applyExamFinishOnlyLockdown();
   }
 
   /* ===========================================================
@@ -787,10 +799,12 @@
   function goTo(i) {
     if (i < 0 || i >= state.questions.length) return;
     if (i === state.index) return;
-    // EXAM mode locks navigation to "forward by one after submitting the
-    // current answer". Sidebar jumps and Back are both no-ops here so a
-    // user can't cheat by skipping back to compare answers.
-    if (isExamMode()) {
+    // LIVE EXAM mode locks navigation to "forward by one after
+    // submitting the current answer". Sidebar jumps and Back are
+    // both no-ops here so a user can't cheat by skipping back to
+    // compare answers. Post-finish (state.finished == true) the test
+    // is over and review-mode navigation is free.
+    if (isExamMode() && !state.finished) {
       if (i !== state.index + 1) return;
       const curQ = state.questions[state.index];
       const curAns = state.answers.get(curQ.id);
@@ -964,11 +978,23 @@
     // the lock so this is a no-op for it.
     if (!isExamMode()) releaseExamNavigationLock();
     if (isExamMode()) {
+      // The finish is no longer "in flight" — clear the finish-only
+      // lockdown artifacts (yellow notice, disabled choice inputs)
+      // so 'Back to test' presents a clean review screen.
+      state.finishInitiated = false;
+      const notice = document.getElementById("examFinishNotice");
+      if (notice && notice.parentNode) notice.parentNode.removeChild(notice);
+      document.querySelectorAll("#choices input").forEach(function (inp) {
+        inp.disabled = false;
+      });
+      // Reveal the question-list sidebar again — review mode lets the
+      // user click through every question to see what they picked.
+      const layout = document.getElementById("layout");
+      if (layout) layout.classList.remove("exam-mode");
       // Show the explicit exit button; hide Retest (you can't reset
       // an exam, you have to exit and start a new one). Back to test
-      // is kept available so the user can scroll through the
-      // questions they took, but feedback stays off (renderQuestion
-      // still respects isExamMode).
+      // now shows feedback (renderQuestion treats state.finished as
+      // "open the answers for review").
       const exit = document.getElementById("examExitBtn");
       const retest = document.getElementById("retestBtn");
       if (exit) exit.style.display = "";
