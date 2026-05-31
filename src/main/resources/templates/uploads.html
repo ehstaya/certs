@@ -172,6 +172,43 @@
       cursor: pointer;
     }
     .drop-zone[aria-disabled="true"] .drop-zone-input { pointer-events: none; }
+
+    /* Two top-level sections on this page: "Upload questions" (the input
+       mechanisms) and "Status of your uploads" (the tracking tables). The
+       page-section heading + thin bar visually separates them so users
+       can scan the page as "do" vs "watch". */
+    .page-section {
+      margin: 28px 0 8px 0;
+      padding: 14px 18px;
+      background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+      border-left: 4px solid var(--brand-primary, #0176D3);
+      border-radius: 6px;
+    }
+    .page-section h2 {
+      margin: 0 0 4px 0;
+      font-size: 1.25rem;
+      color: var(--brand-navy, #032D60);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .page-section .page-section-sub {
+      margin: 0;
+      color: var(--gray-700, #374151);
+      font-size: 0.9rem;
+    }
+    .page-section .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--brand-primary, #0176D3);
+      color: #fff;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -264,6 +301,11 @@
   </p>
   <p class="muted" th:if="${param.deleted}">Deleted.</p>
   <p class="banner banner-error" th:if="${uploadError}" th:text="${uploadError}">error</p>
+
+  <div class="page-section">
+    <h2><span class="num">1</span> Upload questions</h2>
+    <p class="page-section-sub">Pick how you want to contribute — compose a question yourself, upload a file/screenshot, or paste text from anywhere.</p>
+  </div>
 
   <section class="admin-section" style="background:#f0f7ff;border:1px solid #bfdbfe;">
     <h2 style="margin-bottom:6px;">Compose a question from scratch</h2>
@@ -567,6 +609,11 @@
     }
   })();
   </script>
+
+  <div class="page-section">
+    <h2><span class="num">2</span> Status of your uploads</h2>
+    <p class="page-section-sub">Track what's been processed. Files that need action surface at the top; everything else is the running report — auto-refreshing every few seconds.</p>
+  </div>
 
   <section class="admin-section" id="filesSection" th:attr="data-is-admin=${isAdmin}">
     <div id="filesContainer">
