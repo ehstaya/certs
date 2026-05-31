@@ -276,7 +276,14 @@
 
     // Nav buttons
     $("#backBtn").disabled = state.index === 0;
-    $("#nextBtn").disabled = state.index === total - 1;
+    // On the last question the Next button is repurposed as "Finish test"
+    // so users don't have to scroll up to the small Finish button. The
+    // onNextClicked handler routes to onFinish based on data-role.
+    const nextBtn = $("#nextBtn");
+    const isLast = state.index === total - 1;
+    nextBtn.disabled = false;
+    nextBtn.dataset.role = isLast ? "finish" : "next";
+    nextBtn.textContent = isLast ? "Finish test ›" : "Next question ›";
 
     // Active sidebar item
     document.querySelectorAll(".qlist li").forEach((el) => {
@@ -871,6 +878,13 @@
    *  and count against them on the results screen). Confirmation proceeds;
    *  cancel keeps them on the same question to answer first. */
   function onNextClicked() {
+    // The Next button is repurposed as "Finish test" on the last question
+    // (set in renderQuestion via data-role). Route accordingly so users
+    // don't have to scroll up to the smaller Finish button.
+    if ($("#nextBtn").dataset.role === "finish") {
+      onFinish();
+      return;
+    }
     const total = state.questions.length;
     if (state.index >= total - 1) return;
     const q = state.questions[state.index];
@@ -893,6 +907,11 @@
     pendingConfirm = null;
     pendingAlt = null;
     $("#confirmPanel").classList.add("hidden");
+    // Restore the panel that was visible before we opened the confirm
+    // (quiz or results). The callback can still transition to a
+    // different view if it wants — but without this, the quiz stays
+    // hidden after "Skip and continue" and the sidebar appears dead.
+    restoreFromConfirm();
     if (typeof cb === "function") cb();
   }
 
@@ -901,6 +920,7 @@
     pendingAlt = null;
     pendingConfirm = null;
     $("#confirmPanel").classList.add("hidden");
+    restoreFromConfirm();
     if (typeof cb === "function") cb();
   }
 

@@ -409,6 +409,20 @@ public class QuestionAdminService {
         if (text == null || text.trim().isEmpty()) {
             throw new IllegalArgumentException("Question text is required.");
         }
+        // Help URL is mandatory for compose-question: it acts as an audit
+        // trail proving the content came from a legitimate vendor source
+        // (Trailhead, help.salesforce.com, docs.mulesoft.com, etc.) rather
+        // than a leaked exam dump. The browser <input type="url" required>
+        // enforces this client-side; this guard catches scripted POSTs.
+        if (helpUrl == null || helpUrl.trim().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Help URL is required — link to the official vendor doc that backs this question.");
+        }
+        String trimmedUrl = helpUrl.trim();
+        if (!trimmedUrl.startsWith("http://") && !trimmedUrl.startsWith("https://")) {
+            throw new IllegalArgumentException(
+                    "Help URL must be a full http(s):// link to a vendor doc.");
+        }
 
         // Validate the choice set up-front so we never persist a half-baked
         // question. SINGLE = exactly one correct; MULTI = at least 2.
