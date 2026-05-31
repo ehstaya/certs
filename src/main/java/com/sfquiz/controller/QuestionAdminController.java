@@ -116,6 +116,19 @@ public class QuestionAdminController {
         }
         model.addAttribute("certOptions", certOptions);
         model.addAttribute("examFilter", examFilter == null ? "" : examFilter);
+        // Display name for the active filter, used in the "Pending (N) in X"
+        // section header. Falls back to the slug if the active list doesn't
+        // include the cert (e.g. inactive but still has pending rows).
+        String filterSlug = examFilter;
+        String certName = "";
+        if (filterSlug != null && !filterSlug.isEmpty()) {
+            certName = activeVisible.stream()
+                    .filter(e -> filterSlug.equals(e.slug()))
+                    .map(com.sfquiz.dto.ExamDto::name)
+                    .findFirst()
+                    .orElse(filterSlug);
+        }
+        model.addAttribute("certNameForFilter", certName);
 
         model.addAttribute("recentApproved", questions.recentApprovedScoped(10, mine));
         model.addAttribute("recentImports", questions.recentImportEventViewsScoped(mine));
@@ -227,6 +240,59 @@ public class QuestionAdminController {
                 rejected == 0 ? "No questions were rejected (selection was empty or out of scope)."
                               : "Rejected " + rejected + " question" + (rejected == 1 ? "" : "s") + ".");
         return redirectPreservingExam(exam);
+    }
+
+    /** Bulk approve EVERY pending question in the current view (caller's
+     *  managed scope + optional cert filter) — bypassing the per-page
+     *  checkboxes so an admin doesn't have to page through hundreds of
+     *  questions clicking "Select all" each time. Per-id scope is still
+     *  enforced inside doBulkAction, so an out-of-scope question won't
+     *  slip through even if the filter is bypassed. */
+    @PostMapping("/bulk-approve-all")
+    public String bulkApproveAll(@RequestParam(name = "exam", required = false) String exam,
+                                 Authentication auth,
+                                 RedirectAttributes flash) {
+        List<Long> ids = collectAllPendingIds(exam, auth);
+        int approved = doBulkAction(ids, auth, /*approve=*/ true);
+        flash.addFlashAttribute("bulkMessage",
+                approved == 0 ? "No questions matched the filter — nothing to approve."
+                              : "Approved all " + approved + " pending question"
+                                + (approved == 1 ? "" : "s") + " in this view.");
+        return redirectPreservingExam(exam);
+    }
+
+    @PostMapping("/bulk-reject-all")
+    public String bulkRejectAll(@RequestParam(name = "exam", required = false) String exam,
+                                Authentication auth,
+                                RedirectAttributes flash) {
+        List<Long> ids = collectAllPendingIds(exam, auth);
+        int rejected = doBulkAction(ids, auth, /*approve=*/ false);
+        flash.addFlashAttribute("bulkMessage",
+                rejected == 0 ? "No questions matched the filter — nothing to reject."
+                              : "Rejected all " + rejected + " pending question"
+                                + (rejected == 1 ? "" : "s") + " in this view.");
+        return redirectPreservingExam(exam);
+    }
+
+    /** Fetch ids of every PENDING question matching the caller's managed
+     *  scope and the optional cert filter. Used by the "all in view"
+     *  bulk endpoints — pulling ids instead of full entities keeps the
+     *  POST cheap on a big queue. */
+    private List<Long> collectAllPendingIds(String exam, Authentication auth) {
+        Set<String> mine = managed(auth);
+        boolean scopeAll = AuthorizationService.managesAllExams(mine);
+        String examFilter = (exam == null || exam.isBlank()) ? null : exam.trim();
+        if (examFilter != null && !scopeAll && !mine.contains(examFilter)) {
+            examFilter = null;
+        }
+        // Use the paged helper with a large pageSize to get every match in
+        // one shot. With queues in the low thousands this is fine; if it
+        // ever grows past that, swap to a dedicated repository method.
+        QuestionAdminService.PagedApproved pg =
+                questions.pendingPageScopedByExam(examFilter, 0, Integer.MAX_VALUE, mine);
+        List<Long> ids = new java.util.ArrayList<>(pg.rows().size());
+        for (Question q : pg.rows()) ids.add(q.getId());
+        return ids;
     }
 
     /** Bounce back to /admin/questions, keeping the cert filter in the

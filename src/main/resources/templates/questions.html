@@ -68,6 +68,19 @@
     }
     .bulk-bar-select-all { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
     .bulk-bar-select-all input { margin: 0; }
+    .bulk-bar-sep { color: var(--gray-300, #d1d5db); padding: 0 4px; }
+    .btn-outline-primary {
+      background: #fff;
+      color: var(--brand-primary, #0176D3);
+      border: 1px solid var(--brand-primary, #0176D3);
+    }
+    .btn-outline-primary:hover { background: var(--brand-tint, #EAF5FE); }
+    .btn-outline-danger {
+      background: #fff;
+      color: #dc2626;
+      border: 1px solid #dc2626;
+    }
+    .btn-outline-danger:hover { background: #fee2e2; }
     .q-select { float: right; margin-left: 8px; }
     .q-select input { transform: scale(1.2); cursor: pointer; }
 
@@ -192,7 +205,14 @@
   <p class="banner banner-ok" th:if="${bulkMessage}" th:text="${bulkMessage}">bulk message</p>
 
   <section class="admin-section">
-    <h2>Pending <span class="count" th:text="'(' + ${pendingCount} + ')'">(0)</span></h2>
+    <!-- The (N) reflects what's actually in the list below. When a cert
+         filter is on, that's the filtered count (totalElements). When the
+         filter is "All", it's the same as the global pending count. -->
+    <h2>Pending <span class="count" th:text="'(' + ${totalElements} + ')'">(0)</span>
+      <span class="muted" style="font-size:.8rem; font-weight:normal;"
+            th:if="${examFilter != ''}"
+            th:text="|in ${certNameForFilter}|">in cert</span>
+    </h2>
     <div class="empty" th:if="${#lists.isEmpty(pending)}">Nothing pending review.</div>
 
     <!-- Bulk action bar — pick any number of questions and Approve / Reject
@@ -220,6 +240,25 @@
                 data-confirm-title="Reject selected"
                 data-confirm="Reject every selected question? They'll be hidden from the bank."
                 data-confirm-ok="Reject all">Reject selected</button>
+
+        <!-- "All matching this filter" actions — bypass the per-page
+             checkboxes and act on every PENDING question in the current
+             scope (cert filter + caller's managed certs). Useful when an
+             admin has triaged the queue and trusts the whole filtered
+             set. Server enforces the same scope checks per id. -->
+        <span class="bulk-bar-sep" aria-hidden="true">·</span>
+        <button type="submit" formaction="/admin/questions/bulk-approve-all"
+                class="btn btn-outline-primary btn-sm"
+                th:data-confirm-title="|Approve ALL ${totalElements} pending|"
+                th:data-confirm="|Approve EVERY pending question in this view (${totalElements} total)? They'll all move to the live bank. This skips the per-page checkboxes.|"
+                data-confirm-ok="Approve all in view"
+                th:text="|Approve all ${totalElements}|">Approve all</button>
+        <button type="submit" formaction="/admin/questions/bulk-reject-all"
+                class="btn btn-outline-danger btn-sm"
+                th:data-confirm-title="|Reject ALL ${totalElements} pending|"
+                th:data-confirm="|Reject EVERY pending question in this view (${totalElements} total)? They'll all be hidden from the bank.|"
+                data-confirm-ok="Reject all in view"
+                th:text="|Reject all ${totalElements}|">Reject all</button>
       </div>
 
       <div class="q-card" th:each="q : ${pending}">
