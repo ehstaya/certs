@@ -137,6 +137,45 @@ public class SlackNotifier {
         return ok;
     }
 
+    /** Notify the channel that the auto-approval sweep just flipped N
+     *  pending questions to APPROVED after the 24h grace period. The body
+     *  includes the per-cert breakdown so domain admins can scan for
+     *  unexpected volume on their certs. Best-effort: a failed POST is
+     *  logged but doesn't block the auto-approval that already happened. */
+    public boolean postAutoApprovalNotice(int approvedCount, Map<String, Integer> perExamSlug) {
+        if (!isConfigured()) return false;
+        StringBuilder text = new StringBuilder();
+        text.append(":robot_face: *Auto-approved ").append(approvedCount)
+            .append(" pending question").append(approvedCount == 1 ? "" : "s")
+            .append("* after the 24-hour review window expired.\n");
+        if (perExamSlug != null && !perExamSlug.isEmpty()) {
+            text.append("\nBy certification:");
+            perExamSlug.forEach((slug, n) ->
+                    text.append("\n• `").append(slug == null ? "(unknown)" : slug)
+                        .append("` — ").append(n));
+        }
+        text.append("\n\nReview them in the Approved queue and retire any that look wrong.");
+        try {
+            String body = json.writeValueAsString(Map.of("text", text.toString()));
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(webhookUrl))
+                    .timeout(Duration.ofSeconds(8))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() / 100 == 2) {
+                log.info("Slack auto-approval notice posted (n={}).", approvedCount);
+                return true;
+            }
+            log.warn("Slack auto-approval notice returned status={} body={}", resp.statusCode(), resp.body());
+            return false;
+        } catch (Exception ex) {
+            log.warn("Slack auto-approval notice POST failed: {}", ex.getMessage());
+            return false;
+        }
+    }
+
     private boolean postDigestNow(long totalPending) {
         Map<Exam, Long> byExam = countPendingByExamEntity();
         String text = buildDigestText(totalPending, byExam);

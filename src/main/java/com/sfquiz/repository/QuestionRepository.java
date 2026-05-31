@@ -22,6 +22,17 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
 
     List<Question> findByStatusOrderByNumber(Question.Status status);
 
+    /** Auto-approval sweep: PENDING questions whose createdAt is older than
+     *  the supplied cutoff. Legacy rows with null createdAt are EXCLUDED on
+     *  purpose — we only auto-approve modern, time-stamped uploads so a
+     *  pre-tracking row left in PENDING for forever doesn't suddenly flip. */
+    @Query("SELECT q FROM Question q " +
+           "WHERE q.status = com.sfquiz.entity.Question.Status.PENDING " +
+           "AND q.createdAt IS NOT NULL " +
+           "AND q.createdAt < :cutoff " +
+           "ORDER BY q.createdAt ASC")
+    List<Question> findStalePending(@Param("cutoff") java.time.Instant cutoff);
+
     long countByStatus(Question.Status status);
 
     long countByExamAndStatus(Exam exam, Question.Status status);
