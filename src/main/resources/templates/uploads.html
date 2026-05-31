@@ -569,55 +569,107 @@
   </script>
 
   <section class="admin-section" id="filesSection" th:attr="data-is-admin=${isAdmin}">
-    <h2>Files <span class="count" id="filesCount" th:text="'(' + ${#lists.size(uploads)} + ')'">(0)</span>
-      <span id="livePill" class="live-pill" title="Auto-updating every few seconds — no refresh needed">● live</span></h2>
     <div id="filesContainer">
-    <div class="empty" th:if="${#lists.isEmpty(uploads)}">No uploads yet.</div>
-    <table class="admin-table" th:unless="${#lists.isEmpty(uploads)}">
-      <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Status</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead>
-      <tbody>
-        <tr th:each="u : ${uploads}">
-          <td>
-            <a th:href="@{|/uploads/${u.id}/download|}" th:text="${u.originalName}">file.pdf</a>
-            <div class="row-error" th:if="${u.error != null and not #strings.isEmpty(u.error)}" th:text="${u.error}">error message</div>
-          </td>
-          <td th:text="${#numbers.formatDecimal(u.sizeBytes / 1024.0, 1, 1) + ' KB'}">0 KB</td>
-          <td th:text="${#temporals.format(u.uploadedAt, 'yyyy-MM-dd HH:mm')}">—</td>
-          <td th:if="${isAdmin}" th:text="${u.uploadedByEmail != null ? u.uploadedByEmail : '—'}">—</td>
-          <td>
-            <span th:switch="${u.status.name()}">
-              <span th:case="'PENDING'"    class="pill pending">Pending</span>
-              <span th:case="'PROCESSING'" class="pill processing">Extracting…</span>
-              <span th:case="'DONE'"       class="pill done">Done</span>
-              <span th:case="'FAILED'"     class="pill failed">Failed</span>
-              <span th:case="'SKIPPED'"    class="pill skipped">Skipped</span>
-            </span>
-            <span th:if="${u.dumpSuspected}" class="pill dump"
-                  title="Claude flagged this as possible leaked exam content. Questions still flowed through to the admin review queue — admin will give them extra scrutiny.">⚠ Possible dump</span>
-            <span th:if="${u.duplicateOfUploadId != null}" class="pill dup"
-                  th:title="'Same file content as upload #' + ${u.duplicateOfUploadId} + '. Questions were extracted and re-queued; approving a duplicate question auto-retires the older approved version.'"
-                  th:text="'⤴ Re-upload of #' + ${u.duplicateOfUploadId}">⤴ Re-upload</span>
-          </td>
-          <td>
-            <span th:if="${u.questionsImported != null}">
-              <strong th:text="${u.questionsImported}">0</strong>
-              imported<span th:if="${u.questionsExtracted != null and u.questionsExtracted > u.questionsImported}"> /
-              <span th:text="${u.questionsExtracted}">0</span> extracted</span>
-            </span>
-            <span class="muted" th:unless="${u.questionsImported != null}">—</span>
-          </td>
-          <td class="actions-col">
-            <form method="post" th:action="@{|/uploads/${u.id}/retry|}" style="display:inline"
-                  th:if="${u.status.name() == 'FAILED' or u.status.name() == 'SKIPPED'}">
-              <button class="btn btn-sm" type="submit">Retry</button>
-            </form>
-            <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
-              <button class="btn btn-danger btn-sm" type="submit">Delete</button>
-            </form>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+      <!-- The empty state replaces both sub-sections when there are no
+           uploads at all. The two split tables are rendered client-side
+           by the JS poller too — see the same split logic below. -->
+      <div class="empty" th:if="${#lists.isEmpty(uploads)}">No uploads yet.</div>
+
+      <!-- =====================================================
+           1. Files that need your attention — FAILED + SKIPPED.
+           Retry button is the main affordance. Hidden when empty.
+           ===================================================== -->
+      <div th:with="actionable=${uploads.?[status.name() == 'FAILED' or status.name() == 'SKIPPED']}"
+           th:if="${not #lists.isEmpty(actionable)}">
+        <h2 style="display:flex; align-items:center; gap:10px;">
+          ⚠ Needs your attention
+          <span class="count" id="filesActionCount" th:text="'(' + ${#lists.size(actionable)} + ')'">(0)</span>
+          <span class="muted" style="font-size: 12px; font-weight: normal;">Retry to re-run extraction, or delete to drop the file.</span>
+        </h2>
+        <table class="admin-table">
+          <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Status</th><th>Why</th><th class="actions-col">Actions</th></tr></thead>
+          <tbody>
+            <tr th:each="u : ${actionable}">
+              <td>
+                <a th:href="@{|/uploads/${u.id}/download|}" th:text="${u.originalName}">file.pdf</a>
+              </td>
+              <td th:text="${#numbers.formatDecimal(u.sizeBytes / 1024.0, 1, 1) + ' KB'}">0 KB</td>
+              <td th:text="${#temporals.format(u.uploadedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+              <td th:if="${isAdmin}" th:text="${u.uploadedByEmail != null ? u.uploadedByEmail : '—'}">—</td>
+              <td>
+                <span th:switch="${u.status.name()}">
+                  <span th:case="'FAILED'"  class="pill failed">Failed</span>
+                  <span th:case="'SKIPPED'" class="pill skipped">Skipped</span>
+                </span>
+              </td>
+              <td class="row-error" style="max-width: 360px;"
+                  th:text="${u.error != null and not #strings.isEmpty(u.error) ? u.error : '—'}">error message</td>
+              <td class="actions-col">
+                <form method="post" th:action="@{|/uploads/${u.id}/retry|}" style="display:inline">
+                  <button class="btn btn-primary btn-sm" type="submit">Retry</button>
+                </form>
+                <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
+                  <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- =====================================================
+           2. Recent uploads (report) — everything that doesn't
+           need action: DONE / PENDING / PROCESSING. Read-only
+           summary; admins can still delete if they need to.
+           ===================================================== -->
+      <div th:with="reported=${uploads.?[status.name() != 'FAILED' and status.name() != 'SKIPPED']}"
+           th:if="${not #lists.isEmpty(reported)}"
+           style="margin-top: 18px;">
+        <h2 style="display:flex; align-items:center; gap:10px;">
+          Recent uploads
+          <span class="count" id="filesReportCount" th:text="'(' + ${#lists.size(reported)} + ')'">(0)</span>
+          <span id="livePill" class="live-pill" title="Auto-updating every few seconds — no refresh needed">● live</span>
+          <span class="muted" style="font-size: 12px; font-weight: normal;">Already added to the bank — admin reviews each question in /admin/questions.</span>
+        </h2>
+        <table class="admin-table">
+          <thead><tr><th>Name</th><th>Size</th><th>Uploaded</th><th th:if="${isAdmin}">Uploaded by</th><th>Status</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead>
+          <tbody>
+            <tr th:each="u : ${reported}">
+              <td>
+                <a th:href="@{|/uploads/${u.id}/download|}" th:text="${u.originalName}">file.pdf</a>
+              </td>
+              <td th:text="${#numbers.formatDecimal(u.sizeBytes / 1024.0, 1, 1) + ' KB'}">0 KB</td>
+              <td th:text="${#temporals.format(u.uploadedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+              <td th:if="${isAdmin}" th:text="${u.uploadedByEmail != null ? u.uploadedByEmail : '—'}">—</td>
+              <td>
+                <span th:switch="${u.status.name()}">
+                  <span th:case="'PENDING'"    class="pill pending">Pending</span>
+                  <span th:case="'PROCESSING'" class="pill processing">Extracting…</span>
+                  <span th:case="'DONE'"       class="pill done">Done</span>
+                </span>
+                <span th:if="${u.dumpSuspected}" class="pill dump"
+                      title="Claude flagged this as possible leaked exam content. Questions still flowed through to the admin review queue — admin will give them extra scrutiny.">⚠ Possible dump</span>
+                <span th:if="${u.duplicateOfUploadId != null}" class="pill dup"
+                      th:title="'Same file content as upload #' + ${u.duplicateOfUploadId} + '. Questions were extracted and re-queued; approving a duplicate question auto-retires the older approved version.'"
+                      th:text="'⤴ Re-upload of #' + ${u.duplicateOfUploadId}">⤴ Re-upload</span>
+              </td>
+              <td>
+                <span th:if="${u.questionsImported != null}">
+                  <strong th:text="${u.questionsImported}">0</strong>
+                  imported<span th:if="${u.questionsExtracted != null and u.questionsExtracted > u.questionsImported}"> /
+                  <span th:text="${u.questionsExtracted}">0</span> extracted</span>
+                </span>
+                <span class="muted" th:unless="${u.questionsImported != null}">—</span>
+              </td>
+              <td class="actions-col">
+                <form method="post" th:action="@{|/uploads/${u.id}/delete|}" style="display:inline">
+                  <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -625,10 +677,11 @@
   (function () {
     const filesSection = document.getElementById("filesSection");
     const container = document.getElementById("filesContainer");
-    const countEl = document.getElementById("filesCount");
-    const pill = document.getElementById("livePill");
     if (!filesSection || !container) return;
     const isAdmin = filesSection.getAttribute("data-is-admin") === "true";
+    // The live pill + count badges are now inside the per-section
+    // headers that render() rewrites each tick — no need to cache
+    // top-level references for them.
 
     function esc(s) {
       if (s == null) return "";
@@ -686,28 +739,84 @@
       return html;
     }
     function render(rows) {
-      if (countEl) countEl.textContent = "(" + rows.length + ")";
       if (!rows.length) {
         container.innerHTML = '<div class="empty">No uploads yet.</div>';
         return;
       }
-      let html = '<table class="admin-table"><thead><tr>' +
-                 '<th>Name</th><th>Size</th><th>Uploaded</th>' +
-                 (isAdmin ? '<th>Uploaded by</th>' : '') +
-                 '<th>Status</th><th>Questions</th><th class="actions-col">Actions</th></tr></thead><tbody>';
-      for (const r of rows) {
-        const errorHtml = r.error ? '<div class="row-error">' + esc(r.error) + '</div>' : '';
-        html += '<tr>' +
-          '<td><a href="/uploads/' + r.id + '/download">' + esc(r.originalName) + '</a>' + errorHtml + '</td>' +
-          '<td>' + fmtSize(r.sizeBytes) + '</td>' +
-          '<td>' + fmtTime(r.uploadedAt) + '</td>' +
-          (isAdmin ? '<td>' + esc(r.uploadedByEmail || "—") + '</td>' : '') +
-          '<td>' + statusCell(r) + '</td>' +
-          '<td>' + questionsCell(r) + '</td>' +
-          '<td class="actions-col">' + actionsCell(r) + '</td>' +
-        '</tr>';
+      // Same split as the server render: failed / skipped go into the
+      // "Needs your attention" table with a Retry button; everything
+      // else lives in a quieter "Recent uploads" report.
+      const actionable = rows.filter(function (r) { return r.status === "FAILED" || r.status === "SKIPPED"; });
+      const reported   = rows.filter(function (r) { return r.status !== "FAILED" && r.status !== "SKIPPED"; });
+
+      let html = "";
+
+      if (actionable.length) {
+        html +=
+          '<div>' +
+            '<h2 style="display:flex; align-items:center; gap:10px;">' +
+              '⚠ Needs your attention ' +
+              '<span class="count">(' + actionable.length + ')</span>' +
+              '<span class="muted" style="font-size:12px; font-weight:normal;">Retry to re-run extraction, or delete to drop the file.</span>' +
+            '</h2>' +
+            '<table class="admin-table"><thead><tr>' +
+              '<th>Name</th><th>Size</th><th>Uploaded</th>' +
+              (isAdmin ? '<th>Uploaded by</th>' : '') +
+              '<th>Status</th><th>Why</th><th class="actions-col">Actions</th>' +
+            '</tr></thead><tbody>';
+        for (const r of actionable) {
+          html += '<tr>' +
+            '<td><a href="/uploads/' + r.id + '/download">' + esc(r.originalName) + '</a></td>' +
+            '<td>' + fmtSize(r.sizeBytes) + '</td>' +
+            '<td>' + fmtTime(r.uploadedAt) + '</td>' +
+            (isAdmin ? '<td>' + esc(r.uploadedByEmail || "—") + '</td>' : '') +
+            '<td>' + statusPill(r.status) + '</td>' +
+            '<td class="row-error" style="max-width:360px;">' + esc(r.error || "—") + '</td>' +
+            '<td class="actions-col">' +
+              '<form method="post" action="/uploads/' + r.id + '/retry" style="display:inline">' +
+                '<button class="btn btn-primary btn-sm" type="submit">Retry</button>' +
+              '</form> ' +
+              '<form method="post" action="/uploads/' + r.id + '/delete" style="display:inline">' +
+                '<button class="btn btn-danger btn-sm" type="submit">Delete</button>' +
+              '</form>' +
+            '</td>' +
+          '</tr>';
+        }
+        html += '</tbody></table></div>';
       }
-      html += '</tbody></table>';
+
+      if (reported.length) {
+        html +=
+          '<div style="margin-top:18px;">' +
+            '<h2 style="display:flex; align-items:center; gap:10px;">' +
+              'Recent uploads ' +
+              '<span class="count">(' + reported.length + ')</span>' +
+              '<span class="live-pill active" title="Auto-updating">● live</span>' +
+              '<span class="muted" style="font-size:12px; font-weight:normal;">Already added to the bank — admin reviews each question in /admin/questions.</span>' +
+            '</h2>' +
+            '<table class="admin-table"><thead><tr>' +
+              '<th>Name</th><th>Size</th><th>Uploaded</th>' +
+              (isAdmin ? '<th>Uploaded by</th>' : '') +
+              '<th>Status</th><th>Questions</th><th class="actions-col">Actions</th>' +
+            '</tr></thead><tbody>';
+        for (const r of reported) {
+          html += '<tr>' +
+            '<td><a href="/uploads/' + r.id + '/download">' + esc(r.originalName) + '</a></td>' +
+            '<td>' + fmtSize(r.sizeBytes) + '</td>' +
+            '<td>' + fmtTime(r.uploadedAt) + '</td>' +
+            (isAdmin ? '<td>' + esc(r.uploadedByEmail || "—") + '</td>' : '') +
+            '<td>' + statusCell(r) + '</td>' +
+            '<td>' + questionsCell(r) + '</td>' +
+            '<td class="actions-col">' +
+              '<form method="post" action="/uploads/' + r.id + '/delete" style="display:inline">' +
+                '<button class="btn btn-danger btn-sm" type="submit">Delete</button>' +
+              '</form>' +
+            '</td>' +
+          '</tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+
       container.innerHTML = html;
     }
 
@@ -722,7 +831,10 @@
         if (!res.ok) return;
         const data = await res.json();
         render(data.rows || []);
-        if (pill) pill.classList.add("active");
+        // render() rewrote the section headers, including the live
+        // pill — just (re-)mark it active so the pulse animation fires.
+        const pillEl = container.querySelector(".live-pill");
+        if (pillEl) pillEl.classList.add("active");
       } catch (e) {
         // network blip — leave the existing rows in place
       } finally {
