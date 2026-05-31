@@ -81,6 +81,30 @@
       font-size: .9rem;
     }
     .pager .btn-disabled { pointer-events: none; opacity: 0.5; }
+
+    /* Cert filter dropdown — sits above the bulk bar so an admin can scope
+       the queue to one cert and act on just that subset. */
+    .q-cert-filter {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin: 8px 0 14px;
+      font-size: .9rem;
+    }
+    .q-cert-filter label { color: var(--gray-700, #374151); font-weight: 500; }
+    .q-cert-filter select {
+      padding: 6px 10px;
+      border: 1px solid var(--gray-300, #d1d5db);
+      border-radius: 6px;
+      font: 14px/1.2 inherit;
+      background: #fff;
+      min-width: 280px;
+    }
+    .q-cert-filter select:focus {
+      outline: none;
+      border-color: var(--brand-primary, #0176D3);
+      box-shadow: 0 0 0 2px var(--brand-tint, #EAF5FE);
+    }
   </style>
 </head>
 <body>
@@ -131,6 +155,25 @@
     <span>Retired: <strong th:text="${retiredCount}">0</strong></span>
   </div>
 
+  <!-- Cert filter — each option shows the cert name + how many pending
+       questions are waiting on it, so the admin can pick the cert with
+       the biggest queue and work through it. Selecting "All" clears the
+       filter. Bulk approve/reject + pager all preserve this selection. -->
+  <form method="get" action="/admin/questions" class="q-cert-filter"
+        th:unless="${#lists.isEmpty(certOptions)}">
+    <label for="examFilterSel">Filter by certification:</label>
+    <select id="examFilterSel" name="exam" onchange="this.form.submit()">
+      <option value=""
+              th:text="|All — ${pendingCount} pending|"
+              th:selected="${examFilter == ''}">All</option>
+      <option th:each="c : ${certOptions}"
+              th:value="${c.slug}"
+              th:text="|${c.name} — ${c.count} pending|"
+              th:selected="${examFilter == c.slug}">Exam — 0 pending</option>
+    </select>
+    <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
+  </form>
+
   <div class="q-nav-bar">
     <form method="get" action="/admin/questions/approved" style="display:inline">
       <button class="btn btn-primary btn-sm" type="submit">Browse / edit / retire approved</button>
@@ -158,6 +201,9 @@
          to act on. Per-question scope check is enforced server-side too. -->
     <form id="bulkForm" method="post" action="/admin/questions/bulk-approve"
           th:unless="${#lists.isEmpty(pending)}">
+      <!-- Preserve the cert filter so a bulk action keeps the admin on the
+           same filtered view after the POST → redirect. -->
+      <input type="hidden" name="exam" th:value="${examFilter}" />
       <div class="bulk-bar">
         <label class="bulk-bar-select-all">
           <input type="checkbox" id="bulkSelectAll" />
@@ -213,12 +259,12 @@
     <div class="pager" th:if="${totalPages > 1}">
       <a class="btn btn-sm"
          th:classappend="${page == 0} ? 'btn-disabled' : ''"
-         th:href="@{/admin/questions(page=${page - 1})}">‹ Prev</a>
+         th:href="@{/admin/questions(page=${page - 1}, exam=${examFilter})}">‹ Prev</a>
       <span class="muted">Page <strong th:text="${page + 1}">1</strong> of <strong th:text="${totalPages}">1</strong>
         — <span th:text="${totalElements}">0</span> total</span>
       <a class="btn btn-sm"
          th:classappend="${page + 1 >= totalPages} ? 'btn-disabled' : ''"
-         th:href="@{/admin/questions(page=${page + 1})}">Next ›</a>
+         th:href="@{/admin/questions(page=${page + 1}, exam=${examFilter})}">Next ›</a>
     </div>
   </section>
 

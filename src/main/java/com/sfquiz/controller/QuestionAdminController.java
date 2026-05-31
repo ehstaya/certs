@@ -73,9 +73,21 @@ public class QuestionAdminController {
 
     @GetMapping
     public String review(@RequestParam(name = "page", defaultValue = "0") int page,
+                         @RequestParam(name = "exam", required = false) String exam,
                          Authentication auth, Model model) {
         Set<String> mine = managed(auth);
-        QuestionAdminService.PagedApproved pg = questions.pendingPageScoped(page, 20, mine);
+        // Drop a pinned exam slug that's out of the caller's scope before
+        // it reaches the service. Belt-and-suspenders — the service already
+        // applies the manager scope on top, but rejecting here gives a
+        // cleaner UX (filter just falls off, no "0 results" surprise).
+        boolean scopeAll = AuthorizationService.managesAllExams(mine);
+        String examFilter = (exam == null || exam.isBlank()) ? null : exam.trim();
+        if (examFilter != null && !scopeAll && !mine.contains(examFilter)) {
+            examFilter = null;
+        }
+
+        QuestionAdminService.PagedApproved pg =
+                questions.pendingPageScopedByExam(examFilter, page, 20, mine);
         model.addAttribute("pending", pg.rows());
         model.addAttribute("page", pg.page());
         model.addAttribute("totalPages", pg.totalPages());
@@ -84,6 +96,27 @@ public class QuestionAdminController {
         model.addAttribute("pendingCount", questions.pendingCountScoped(mine));
         model.addAttribute("approvedCount", questions.approvedCountScoped(mine));
         model.addAttribute("retiredCount", questions.retiredCountScoped(mine));
+
+        // Per-cert pending counts drive the "Filter by certification" dropdown.
+        // Build a stable, name-aware list — slug + display name + count —
+        // so the template doesn't need to look up exam metadata per row.
+        java.util.LinkedHashMap<String, Long> countsBySlug =
+                questions.pendingCountsByExamScoped(mine);
+        java.util.List<com.sfquiz.dto.ExamDto> activeVisible = examService.listActive().stream()
+                .filter(e -> scopeAll || mine.contains(e.slug()))
+                .toList();
+        java.util.List<java.util.Map<String, Object>> certOptions = new java.util.ArrayList<>();
+        for (com.sfquiz.dto.ExamDto e : activeVisible) {
+            long c = countsBySlug.getOrDefault(e.slug(), 0L);
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("slug", e.slug());
+            row.put("name", e.name());
+            row.put("count", c);
+            certOptions.add(row);
+        }
+        model.addAttribute("certOptions", certOptions);
+        model.addAttribute("examFilter", examFilter == null ? "" : examFilter);
+
         model.addAttribute("recentApproved", questions.recentApprovedScoped(10, mine));
         model.addAttribute("recentImports", questions.recentImportEventViewsScoped(mine));
         model.addAttribute("managedSlugs", mine);
@@ -174,24 +207,35 @@ public class QuestionAdminController {
      *  skipped — they may have been deleted between page load and submit. */
     @PostMapping("/bulk-approve")
     public String bulkApprove(@RequestParam(name = "ids", required = false) List<Long> ids,
+                              @RequestParam(name = "exam", required = false) String exam,
                               Authentication auth,
                               RedirectAttributes flash) {
         int approved = doBulkAction(ids, auth, /*approve=*/ true);
         flash.addFlashAttribute("bulkMessage",
                 approved == 0 ? "No questions were approved (selection was empty or out of scope)."
                               : "Approved " + approved + " question" + (approved == 1 ? "" : "s") + ".");
-        return "redirect:/admin/questions";
+        return redirectPreservingExam(exam);
     }
 
     @PostMapping("/bulk-reject")
     public String bulkReject(@RequestParam(name = "ids", required = false) List<Long> ids,
+                             @RequestParam(name = "exam", required = false) String exam,
                              Authentication auth,
                              RedirectAttributes flash) {
         int rejected = doBulkAction(ids, auth, /*approve=*/ false);
         flash.addFlashAttribute("bulkMessage",
                 rejected == 0 ? "No questions were rejected (selection was empty or out of scope)."
                               : "Rejected " + rejected + " question" + (rejected == 1 ? "" : "s") + ".");
-        return "redirect:/admin/questions";
+        return redirectPreservingExam(exam);
+    }
+
+    /** Bounce back to /admin/questions, keeping the cert filter in the
+     *  URL so the admin lands on the same filtered list they just acted
+     *  on instead of being thrown back to "All certifications". */
+    private static String redirectPreservingExam(String exam) {
+        if (exam == null || exam.isBlank()) return "redirect:/admin/questions";
+        return "redirect:/admin/questions?exam=" + java.net.URLEncoder.encode(
+                exam.trim(), java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /** Shared bulk-action loop — returns the number of ids that actually

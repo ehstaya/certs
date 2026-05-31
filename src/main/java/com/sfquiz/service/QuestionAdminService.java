@@ -544,6 +544,44 @@ public class QuestionAdminService {
         return paged(null, Question.Status.PENDING, page, pageSize, managedSlugs);
     }
 
+    /** Same as {@link #pendingPageScoped} but with an optional exam-slug
+     *  filter. {@code examSlug} = null/blank → unfiltered; otherwise
+     *  only PENDING rows on that cert appear. The exam filter is applied
+     *  on top of the manager-scope filter, so a domain admin can never
+     *  see another cert's queue even by pinning its slug. */
+    public PagedApproved pendingPageScopedByExam(String examSlug, int page, int pageSize,
+                                                 Set<String> managedSlugs) {
+        return paged(examSlug, Question.Status.PENDING, page, pageSize, managedSlugs);
+    }
+
+    /** Per-cert pending counts for the certs in {@code managedSlugs}.
+     *  Used to drive the "filter by certification" dropdown on
+     *  /admin/questions: each option shows the cert name + how many
+     *  questions are currently waiting on it. Order matches {@code
+     *  examOptions} below. */
+    public java.util.LinkedHashMap<String, Long> pendingCountsByExamScoped(Set<String> managedSlugs) {
+        java.util.LinkedHashMap<String, Long> out = new java.util.LinkedHashMap<>();
+        // Resolve the scope to a guaranteed non-null set the loop can query
+        // without re-tripping the static analyzer. Null OR wildcard means
+        // "no manager scope" and we use an empty set + the boolean below
+        // to skip the per-row filter.
+        Set<String> filter = (managedSlugs == null || managedSlugs.contains("*"))
+                ? java.util.Collections.emptySet()
+                : managedSlugs;
+        boolean scoped = !filter.isEmpty();
+        List<Question> pending = repo.findByStatusOrderByNumber(Question.Status.PENDING);
+        for (Question q : pending) {
+            if (q.getExam() == null) continue;
+            String slug = q.getExam().getSlug();
+            if (scoped && !filter.contains(slug)) continue;
+            // Avoid Map.merge(..., Long::sum) here — Eclipse's null-analysis
+            // can't prove the BiFunction's return is non-null and emits a
+            // warning. Plain put/getOrDefault is just as cheap and clean.
+            out.put(slug, out.getOrDefault(slug, 0L) + 1L);
+        }
+        return out;
+    }
+
     /** Domain-scoped pending list — drops rows whose exam slug isn't in
      *  {@code managedSlugs}. Null or "*"-wildcard set means "no filter". */
     public List<Question> pendingScoped(Set<String> managedSlugs) {
