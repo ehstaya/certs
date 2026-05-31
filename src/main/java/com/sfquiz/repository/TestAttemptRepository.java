@@ -38,6 +38,23 @@ public interface TestAttemptRepository extends JpaRepository<TestAttempt, Long> 
            "ORDER BY a.user.email ASC, a.exam.slug ASC")
     List<Object[]> allUserExamSummaries();
 
+    /** Same shape as {@link #allUserExamSummaries} but scoped to one
+     *  delivery mode. When {@code filterByMode} is false the {@code mode}
+     *  param is ignored — used by the admin All-user scores view's
+     *  mode filter (All / Practice / Real exam). */
+    @Query("SELECT a.user.id, a.user.email, a.user.fullName, a.user.role, " +
+           "       a.exam.id, a.exam.slug, a.exam.name, a.exam.passingScorePercent, " +
+           "       COUNT(a.id), AVG(a.scorePercent), MAX(a.scorePercent), " +
+           "       SUM(CASE WHEN a.passed THEN 1 ELSE 0 END), " +
+           "       MAX(a.finishedAt) " +
+           "FROM TestAttempt a " +
+           "WHERE (:filterByMode = false OR a.mode = :mode) " +
+           "GROUP BY a.user.id, a.user.email, a.user.fullName, a.user.role, " +
+           "         a.exam.id, a.exam.slug, a.exam.name, a.exam.passingScorePercent " +
+           "ORDER BY a.user.email ASC, a.exam.slug ASC")
+    List<Object[]> allUserExamSummariesByMode(@Param("filterByMode") boolean filterByMode,
+                                              @Param("mode") com.sfquiz.entity.TestAttempt.Mode mode);
+
     /** Every attempt for one exam, chronological. Drives the admin
      *  cert-trend chart — we bucket the result by week in the service. */
     @Query("SELECT a FROM TestAttempt a WHERE a.exam.slug = :slug " +

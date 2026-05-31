@@ -141,6 +141,10 @@
       const el = $(sel);
       if (el) el.style.display = "none";
     });
+    // Collapse the question-list sidebar entirely — closer to a real
+    // proctored exam where you can't see "I've answered N of M".
+    const layout = document.getElementById("layout");
+    if (layout) layout.classList.add("exam-mode");
   }
 
   function applyExamBranding(meta) {

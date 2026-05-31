@@ -106,7 +106,22 @@
       Click a <strong>Correct</strong> or <strong>Incorrect</strong> count to review the questions
       with explanations — useful for learning from what you got right and where you went wrong.
     </p>
-    <div class="empty" th:if="${#lists.isEmpty(rows)}">No attempts on this test yet.</div>
+    <!-- Mode filter — All / Practice / Real exam. Counts in the option
+         labels are pre-filter totals so the user always knows how many
+         of each kind exist for this exam. -->
+    <form method="get" action="/my/reports/per-test"
+          style="display:flex; gap:10px; align-items:center; margin: 4px 0 14px; font-size: 13px;">
+      <input type="hidden" name="exam" th:value="${exam}" />
+      <label for="modeFilterSel" style="color: var(--gray-700, #374151); font-weight:500;">Show:</label>
+      <select id="modeFilterSel" name="mode" onchange="this.form.submit()"
+              style="padding:6px 10px; border:1px solid var(--gray-300,#d1d5db); border-radius:6px; font-size:13px; background:#fff;">
+        <option value=""         th:selected="${modeFilter == ''}"         th:text="|All — ${allCountTotal}|">All</option>
+        <option value="PRACTICE" th:selected="${modeFilter == 'PRACTICE'}" th:text="|Practice — ${practiceCountTotal}|">Practice</option>
+        <option value="EXAM"     th:selected="${modeFilter == 'EXAM'}"     th:text="|Real exam — ${examCountTotal}|">Real exam</option>
+      </select>
+      <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
+    </form>
+    <div class="empty" th:if="${#lists.isEmpty(rows)}">No attempts match this filter on this test.</div>
     <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
       <thead><tr><th>Finished</th><th>Mode</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th><th>Retake</th></tr></thead>
       <tbody>

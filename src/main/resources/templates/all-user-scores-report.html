@@ -92,6 +92,14 @@
           <option th:each="ex : ${exams}" th:value="${ex.slug}" th:text="${ex.name}" th:selected="${ex.slug == exam}">Exam</option>
         </select>
       </label>
+      <label>
+        <span>Mode</span>
+        <select name="mode" onchange="this.form.submit()">
+          <option value=""         th:selected="${mode == ''}">— All modes —</option>
+          <option value="PRACTICE" th:selected="${mode == 'PRACTICE'}">Practice only</option>
+          <option value="EXAM"     th:selected="${mode == 'EXAM'}">Real exam only</option>
+        </select>
+      </label>
     </form>
 
     <section class="summary-cards" th:unless="${#lists.isEmpty(rows)}">

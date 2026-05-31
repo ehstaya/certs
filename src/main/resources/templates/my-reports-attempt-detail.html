@@ -135,7 +135,14 @@
       <span th:if="${filter == 'all'}">All your answers</span>
     </h1>
     <p class="muted">
-      Attempt on <strong th:text="${detail.examName}">Exam</strong> finished
+      Attempt on <strong th:text="${detail.examName}">Exam</strong>
+      <!-- Mode pill — same colors as the per-test attempt history so it
+           reads consistently across the My reports section. -->
+      <span th:if="${detail.mode == 'EXAM'}"
+            style="display:inline-block; margin-left:6px; padding:2px 8px; border-radius:999px; background:#fef3c7; color:#92400e; font-size:11px; font-weight:600; letter-spacing:.3px;">REAL EXAM</span>
+      <span th:if="${detail.mode != 'EXAM'}"
+            style="display:inline-block; margin-left:6px; padding:2px 8px; border-radius:999px; background:#e0f2fe; color:#075985; font-size:11px; font-weight:600; letter-spacing:.3px;">PRACTICE</span>
+      finished
       <strong th:text="${#temporals.format(detail.finishedAt, 'yyyy-MM-dd HH:mm')}">—</strong>.
       Review the explanations to lock in what you got right and learn from what you missed.
     </p>

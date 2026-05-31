@@ -68,10 +68,14 @@ public class UserReportsController {
         return "my-reports-dashboard";
     }
 
-    /** Per-test details (full attempt list for a chosen exam). */
+    /** Per-test details (full attempt list for a chosen exam). The
+     *  optional {@code mode} filter ("PRACTICE"/"EXAM"/"") scopes the
+     *  table + aggregate cards to one delivery mode so the user can
+     *  compare e.g. their real-exam runs against their practice runs. */
     @GetMapping("/per-test")
     public String perTest(Authentication auth,
                           @RequestParam(name = "exam", required = false) String exam,
+                          @RequestParam(name = "mode", required = false) String modeFilter,
                           Model model) {
         String email = currentEmail(auth);
         List<ExamDto> exams = examService.listActive();
@@ -82,12 +86,34 @@ public class UserReportsController {
                     ? (exams.isEmpty() ? null : exams.get(0).slug())
                     : summary.get(0).slug();
         }
-        List<TestAttempt> rows = (exam == null) ? List.of() : attempts.trendForUserAndExam(email, exam);
+        List<TestAttempt> all = (exam == null) ? List.of() : attempts.trendForUserAndExam(email, exam);
+        // Apply the mode filter on the result set so aggregate cards
+        // below also reflect the chosen slice.
+        final String modeNorm = (modeFilter == null) ? "" : modeFilter.trim().toUpperCase();
+        List<TestAttempt> rows;
+        if ("PRACTICE".equals(modeNorm) || "EXAM".equals(modeNorm)) {
+            rows = all.stream()
+                    .filter(a -> a.getMode() != null && modeNorm.equals(a.getMode().name()))
+                    .toList();
+        } else {
+            rows = all;
+        }
         // Reverse so newest first in the table view.
         List<TestAttempt> newestFirst = new ArrayList<>(rows);
         java.util.Collections.reverse(newestFirst);
         model.addAttribute("rows", newestFirst);
         model.addAttribute("exam", exam);
+        model.addAttribute("modeFilter", modeNorm);
+        // Per-mode counts for the dropdown labels ("All — 24 / Practice
+        // — 18 / Real exam — 6"). Computed off the unfiltered set.
+        int practiceN = 0, examN = 0;
+        for (TestAttempt a : all) {
+            if (a.getMode() != null && a.getMode().name().equals("EXAM")) examN++;
+            else practiceN++;
+        }
+        model.addAttribute("practiceCountTotal", practiceN);
+        model.addAttribute("examCountTotal", examN);
+        model.addAttribute("allCountTotal", all.size());
         model.addAttribute("exams", exams);
         // Per-exam aggregate for the header cards.
         int avg = 0, best = 0, passedCount = 0;

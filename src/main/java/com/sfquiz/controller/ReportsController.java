@@ -280,6 +280,7 @@ public class ReportsController {
     @GetMapping("/scores")
     public String userScores(@RequestParam(name = "role", required = false) String role,
                              @RequestParam(name = "exam", required = false) String exam,
+                             @RequestParam(name = "mode", required = false) String mode,
                              Authentication auth,
                              Model model) {
         List<ExamDto> exams = examsVisibleTo(auth);
@@ -296,8 +297,21 @@ public class ReportsController {
         // still let them browse their visible set below.
         if (examFilter != null && !visibleSlugs.contains(examFilter)) examFilter = null;
 
+        // Mode filter (All / Practice / Real exam). Aggregates are
+        // recomputed at the SQL level by allUserExamSummariesByMode so
+        // each row's count/avg/max/passCount reflect just that slice.
+        com.sfquiz.entity.TestAttempt.Mode modeFilter = null;
+        if (mode != null && !mode.isBlank()) {
+            try {
+                modeFilter = com.sfquiz.entity.TestAttempt.Mode.valueOf(mode.trim().toUpperCase());
+            } catch (IllegalArgumentException ignored) { /* leave null = "all modes" */ }
+        }
+        List<Object[]> summaries = (modeFilter == null)
+                ? attempts.allUserExamSummaries()
+                : attempts.allUserExamSummariesByMode(true, modeFilter);
+
         List<UserExamScore> rows = new ArrayList<>();
-        for (Object[] r : attempts.allUserExamSummaries()) {
+        for (Object[] r : summaries) {
             UserRole rowRole = (UserRole) r[3];
             String slug = (String) r[5];
             if (!visibleSlugs.contains(slug)) continue;   // domain-admin scope
@@ -330,6 +344,7 @@ public class ReportsController {
         model.addAttribute("exams", exams);
         model.addAttribute("exam", examFilter == null ? "" : examFilter);
         model.addAttribute("role", roleFilter == null ? "" : roleFilter.name());
+        model.addAttribute("mode", modeFilter == null ? "" : modeFilter.name());
         model.addAttribute("section", "scores");
         return "all-user-scores-report";
     }

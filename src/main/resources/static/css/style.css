@@ -94,6 +94,14 @@ button { font-family: inherit; cursor: pointer; }
   grid-template-columns: var(--sidebar-w, 320px) 6px 1fr;
   min-height: calc(100vh - 48px);
 }
+/* Exam-mode collapses the question list — the user only sees the
+   current question + submit/finish controls, matching a proctored
+   exam. Added by quiz.js when ?mode=exam. */
+.layout.exam-mode {
+  grid-template-columns: 1fr;
+}
+.layout.exam-mode #sidebar,
+.layout.exam-mode #resizer { display: none; }
 
 /* Sidebar resizer (drag handle) */
 .resizer {
@@ -731,28 +739,46 @@ body.resizing * { cursor: col-resize !important; user-select: none !important; }
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 6px;       /* tighter — pills now provide their own breathing room */
   font-size: 13px;
+  flex-wrap: wrap;
 }
 .topbar-user {
   color: #cbd5e1;
   font-weight: 500;
 }
+/* Topbar nav — every link becomes a proportional pill-button so they
+   read as a uniform navigation rail (same width per character, same
+   height, same hit target) across every page in the app. */
 .topbar-link {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
   color: #fff;
   text-decoration: none;
   font-weight: 500;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-.topbar-link:hover { color: #c4b5fd; }
+.topbar-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.20);
+}
+/* Sign out — keeps the same pill chrome via the parent .topbar-link
+   class; this rule just makes the inner <button> blend with it. */
 .topbar-link.as-btn {
   background: transparent;
-  border: none;
   color: #fff;
   font: inherit;
   cursor: pointer;
-  padding: 0;
 }
-.topbar-link.as-btn:hover { color: #c4b5fd; }
+.topbar-link.as-btn:hover { color: #fff; }
 
 /* ===========================
    Admin page
@@ -822,13 +848,10 @@ body.resizing * { cursor: col-resize !important; user-select: none !important; }
 /* ===========================
    In-app header on test page
    =========================== */
+/* Separators between topbar links are no longer needed — each link
+   now has its own pill background so the visual rhythm is enough. */
 .topbar .topbar-link + .topbar-link::before,
-.topbar .topbar-user + .topbar-link::before {
-  content: "·";
-  color: #6b7280;
-  margin-right: 14px;
-  display: inline-block;
-}
+.topbar .topbar-user + .topbar-link::before { content: none; }
 
 .results-panel {
   max-width: 720px;
