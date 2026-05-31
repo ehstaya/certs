@@ -199,6 +199,11 @@
   }
   function onExamBeforeUnload(e) {
     if (!examNavLockActive) return undefined;
+    // After Finish the attempt is already recorded — no point warning
+    // about lost answers. We still keep the topbar visually locked so
+    // exam-mode wraps cleanly, but tab-close / reload from the results
+    // screen shouldn't trip the browser prompt.
+    if (state.finished) return undefined;
     // Modern browsers ignore the message string and show their own
     // generic copy, but setting returnValue is still required to
     // trigger the dialog.
@@ -308,6 +313,16 @@
     $("#nextBtn").addEventListener("click", onNextClicked);
     $("#finishBtn").addEventListener("click", onFinish);
     $("#backToTestBtn").addEventListener("click", hideResultsPanel);
+    // Exam-mode-only: explicit exit point on the results screen. Released
+    // the nav lock + bounces the user to their attempt history.
+    const examExit = document.getElementById("examExitBtn");
+    if (examExit) {
+      examExit.addEventListener("click", function () {
+        releaseExamNavigationLock();
+        const slug = examSlug ? "?exam=" + encodeURIComponent(examSlug) : "";
+        window.location.href = "/my/reports/per-test" + slug;
+      });
+    }
     $("#retestBtn").addEventListener("click", onResetTest);
     $("#statCorrect").addEventListener("click", () => showResultsDetail("correct"));
     $("#statIncorrect").addEventListener("click", () => showResultsDetail("incorrect"));
@@ -909,10 +924,24 @@
 
     state.finished = true;
     setFinishLocked(true);
-    // Exam mode locked every navigation path while the test was running.
-    // Now that the user has finished + their score is showing, restore
-    // normal topbar nav so they can leave the page / review later.
-    releaseExamNavigationLock();
+    // EXAM mode: keep the topbar locked through the results screen so
+    // the proctored-exam feel doesn't break the moment Finish lands.
+    // The user exits through the dedicated "Exit exam" button on the
+    // results panel (revealed below), which releases the lock and routes
+    // them to their My reports detail page. PRACTICE mode never had
+    // the lock so this is a no-op for it.
+    if (!isExamMode()) releaseExamNavigationLock();
+    if (isExamMode()) {
+      // Show the explicit exit button; hide Retest (you can't reset
+      // an exam, you have to exit and start a new one). Back to test
+      // is kept available so the user can scroll through the
+      // questions they took, but feedback stays off (renderQuestion
+      // still respects isExamMode).
+      const exit = document.getElementById("examExitBtn");
+      const retest = document.getElementById("retestBtn");
+      if (exit) exit.style.display = "";
+      if (retest) retest.style.display = "none";
+    }
 
     $("#quizArea").classList.add("hidden");
     $("#resultsPanel").classList.remove("hidden");

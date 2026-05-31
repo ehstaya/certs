@@ -157,6 +157,10 @@
             <div class="results-actions">
               <button id="retestBtn" class="btn btn-reset" type="button">Retest</button>
               <button id="backToTestBtn" class="btn btn-primary" type="button">Back to test</button>
+              <!-- Hidden in practice mode; quiz.js reveals it in exam mode
+                   so the user has one (and only one) explicit exit point
+                   from the proctored experience. -->
+              <button id="examExitBtn" class="btn btn-primary" type="button" style="display:none">Exit exam — view in My reports</button>
             </div>
           </div>
 
