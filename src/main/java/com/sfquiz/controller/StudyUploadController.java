@@ -4,6 +4,7 @@ import com.sfquiz.dto.ExamDto;
 import com.sfquiz.entity.StudyUpload;
 import com.sfquiz.entity.User;
 import com.sfquiz.repository.StudyUploadRepository;
+import com.sfquiz.repository.StudyUploadSummary;
 import com.sfquiz.service.AuthorizationService;
 import com.sfquiz.service.CostMeter;
 import com.sfquiz.service.ExamService;
@@ -12,6 +13,7 @@ import com.sfquiz.service.TextExtractor;
 import com.sfquiz.service.UploadProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -95,12 +97,15 @@ public class StudyUploadController {
         // Default view hides archived rows so successfully-processed
         // uploads don't clutter the page once the user has confirmed
         // they're happy with what landed in the bank.
-        List<StudyUpload> rows = admin
-                ? uploads.findTop50ByArchivedFalseOrderByUploadedAtDesc()
-                : uploads.findTop50ByUploadedByEmailIgnoreCaseAndArchivedFalseOrderByUploadedAtDesc(email);
+        // Projection variants skip the multi-MB {@code content} byte[] column —
+        // critical because the /uploads/api/status poller hits this every 4 s.
+        PageRequest top50 = PageRequest.of(0, 50);
+        List<StudyUploadSummary> rows = admin
+                ? uploads.findSummaryByArchivedFalseOrderByUploadedAtDesc(top50)
+                : uploads.findSummaryByUploadedByEmailIgnoreCaseAndArchivedFalseOrderByUploadedAtDesc(email, top50);
         long archivedCount = admin
-                ? uploads.findTop100ByArchivedTrueOrderByUploadedAtDesc().size()
-                : uploads.findTop100ByUploadedByEmailIgnoreCaseAndArchivedTrueOrderByUploadedAtDesc(email).size();
+                ? uploads.countByArchivedTrue()
+                : uploads.countByUploadedByEmailIgnoreCaseAndArchivedTrue(email);
         model.addAttribute("uploads", rows);
         model.addAttribute("archivedCount", archivedCount);
         model.addAttribute("isAdmin", admin);
@@ -379,9 +384,10 @@ public class StudyUploadController {
     public String archivedList(Authentication auth, Model model) {
         String email = currentEmail(auth);
         boolean admin = isAdmin(auth);
-        List<StudyUpload> rows = admin
-                ? uploads.findTop100ByArchivedTrueOrderByUploadedAtDesc()
-                : uploads.findTop100ByUploadedByEmailIgnoreCaseAndArchivedTrueOrderByUploadedAtDesc(email);
+        PageRequest top100 = PageRequest.of(0, 100);
+        List<StudyUploadSummary> rows = admin
+                ? uploads.findSummaryByArchivedTrueOrderByUploadedAtDesc(top100)
+                : uploads.findSummaryByUploadedByEmailIgnoreCaseAndArchivedTrueOrderByUploadedAtDesc(email, top100);
         model.addAttribute("uploads", rows);
         model.addAttribute("isAdmin", admin);
         return "uploads-archived";
@@ -407,11 +413,12 @@ public class StudyUploadController {
     public java.util.Map<String, Object> apiStatus(Authentication auth) {
         String email = currentEmail(auth);
         boolean admin = isAdmin(auth);
-        List<StudyUpload> rows = admin
-                ? uploads.findTop50ByArchivedFalseOrderByUploadedAtDesc()
-                : uploads.findTop50ByUploadedByEmailIgnoreCaseAndArchivedFalseOrderByUploadedAtDesc(email);
+        PageRequest top50 = PageRequest.of(0, 50);
+        List<StudyUploadSummary> rows = admin
+                ? uploads.findSummaryByArchivedFalseOrderByUploadedAtDesc(top50)
+                : uploads.findSummaryByUploadedByEmailIgnoreCaseAndArchivedFalseOrderByUploadedAtDesc(email, top50);
         java.util.List<java.util.Map<String, Object>> dtos = new java.util.ArrayList<>(rows.size());
-        for (StudyUpload u : rows) {
+        for (StudyUploadSummary u : rows) {
             java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();
             r.put("id", u.getId());
             r.put("originalName", u.getOriginalName());

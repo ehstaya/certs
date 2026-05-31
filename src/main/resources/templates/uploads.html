@@ -939,6 +939,18 @@
     let pollTimer = null;
     let inFlight = false;
 
+    // Anything still extracting/pending is what we want to keep polling
+    // for — once every visible row is in a terminal state, the poll loop
+    // sleeps. Saves a roundtrip every 8 s on a page the user might leave
+    // open all day, and was the main DB pressure source on the dyno.
+    function anyInFlight(rows) {
+      if (!rows) return false;
+      for (const r of rows) {
+        if (r.status === "PENDING" || r.status === "PROCESSING") return true;
+      }
+      return false;
+    }
+
     async function pollOnce() {
       if (inFlight) return;
       inFlight = true;
@@ -946,11 +958,16 @@
         const res = await fetch("/uploads/api/status", { credentials: "same-origin", cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
-        render(data.rows || []);
+        const rows = data.rows || [];
+        render(rows);
         // render() rewrote the section headers, including the live
         // pill — just (re-)mark it active so the pulse animation fires.
         const pillEl = container.querySelector(".live-pill");
         if (pillEl) pillEl.classList.add("active");
+        // Pause the poll once everything has settled — restart on the
+        // next upload via the form-submit reload, or when the user
+        // returns to the tab and visibilitychange fires.
+        if (!anyInFlight(rows)) stop();
       } catch (e) {
         // network blip — leave the existing rows in place
       } finally {
@@ -960,7 +977,7 @@
     function start() {
       if (pollTimer) return;
       pollOnce(); // immediate refresh
-      pollTimer = setInterval(pollOnce, 4000);
+      pollTimer = setInterval(pollOnce, 8000);
     }
     function stop() {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
