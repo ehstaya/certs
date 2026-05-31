@@ -173,41 +173,67 @@
     }
     .drop-zone[aria-disabled="true"] .drop-zone-input { pointer-events: none; }
 
-    /* Two top-level sections on this page: "Upload questions" (the input
-       mechanisms) and "Status of your uploads" (the tracking tables). The
-       page-section heading + thin bar visually separates them so users
-       can scan the page as "do" vs "watch". */
-    .page-section {
-      margin: 28px 0 8px 0;
-      padding: 14px 18px;
-      background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
-      border-left: 4px solid var(--brand-primary, #0176D3);
-      border-radius: 6px;
+    /* Left-sidebar layout — splits the page into "Upload questions" (the
+       input mechanisms) and "Status of your uploads" (tracking tables),
+       matching the same pattern the Reports dashboard uses. The active
+       view is toggled client-side via URL hash so the page reloads cleanly
+       and bookmarks work. */
+    .uploads-layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 24px;
+      max-width: 1600px;
+      margin: 24px auto;
+      padding: 0 24px;
     }
-    .page-section h2 {
-      margin: 0 0 4px 0;
-      font-size: 1.25rem;
-      color: var(--brand-navy, #032D60);
+    .uploads-nav {
+      background: #fff;
+      border: 1px solid var(--gray-200, #e5e7eb);
+      border-radius: 10px;
+      padding: 12px 0;
+      position: sticky;
+      top: 80px;
+      align-self: start;
+      font-size: 14px;
+    }
+    .uploads-nav-section {
+      font-size: 11px;
+      color: var(--gray-500, #6b7280);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      padding: 10px 18px 4px;
+    }
+    .uploads-nav a {
       display: flex;
       align-items: center;
       gap: 10px;
-    }
-    .page-section .page-section-sub {
-      margin: 0;
+      padding: 8px 18px;
       color: var(--gray-700, #374151);
-      font-size: 0.9rem;
+      text-decoration: none;
+      border-left: 3px solid transparent;
+      transition: background 0.12s ease;
     }
-    .page-section .num {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: var(--brand-primary, #0176D3);
-      color: #fff;
-      font-size: 0.9rem;
-      font-weight: 700;
+    .uploads-nav a:hover { background: var(--gray-50, #f9fafb); }
+    .uploads-nav a.active {
+      background: var(--brand-tint, #EAF5FE);
+      border-left-color: var(--brand-primary, #0176D3);
+      color: var(--brand-navy, #032D60);
+      font-weight: 600;
+    }
+    .uploads-content {
+      background: #fff;
+      border: 1px solid var(--gray-200, #e5e7eb);
+      border-radius: 10px;
+      padding: 24px 28px;
+      min-width: 0;
+    }
+    .uploads-view { display: none; }
+    .uploads-view.active { display: block; }
+
+    @media (max-width: 768px) {
+      .uploads-layout { grid-template-columns: 1fr; padding: 0 12px; }
+      .uploads-nav { position: static; }
     }
   </style>
 </head>
@@ -244,8 +270,52 @@
 })();
 </script>
 
-<main class="admin-wrap">
+<div class="uploads-layout"
+     th:attr="data-flashed=${(uploadedCount != null and uploadedCount > 0) or retriedId != null or archivedId != null} ? 'true' : null">
+  <aside class="uploads-nav" aria-label="Upload sections">
+    <div class="uploads-nav-section">Add questions</div>
+    <a href="#upload" data-view="upload"><span aria-hidden="true">📤</span> Upload questions</a>
+    <a href="#status" data-view="status"><span aria-hidden="true">📊</span> Status of uploads</a>
+  </aside>
+
+  <main class="uploads-content">
   <h1>Study material uploads</h1>
+
+  <!-- Flash messages — always visible at the top regardless of which
+       view is active, so the user always sees the result of their
+       last action. -->
+  <p class="muted" th:if="${uploadedCount != null and uploadedCount > 0}">
+    Uploaded <span th:text="${uploadedCount}">0</span> file(s)<span th:if="${uploadedExam != null}"> for <code th:text="${uploadedExam}">exam</code></span>.
+    Extraction is running now — switch to <a href="#status">Status of uploads</a> to watch progress.
+  </p>
+  <p class="muted" th:if="${retriedId != null}">
+    Re-queued upload #<span th:text="${retriedId}">0</span> for extraction.
+  </p>
+  <p class="muted" th:if="${archivedId != null}">
+    Archived upload #<span th:text="${archivedId}">0</span>.
+  </p>
+  <p class="muted unsupported" th:if="${rejected != null and not #lists.isEmpty(rejected)}">
+    Rejected:
+    <span th:each="r, it : ${rejected}">
+      <span th:text="${r}">…</span><span th:if="${!it.last}">, </span>
+    </span>
+  </p>
+  <p class="banner banner-warn"
+     th:if="${duplicateUploads != null and not #lists.isEmpty(duplicateUploads)}"
+     style="background:#fef3c7; border-left:3px solid #f59e0b; padding:10px 12px; border-radius:4px; color:#78350f;">
+    ⚠ Re-upload detected — same file content as an earlier submission:
+    <span th:each="r, it : ${duplicateUploads}">
+      <strong th:text="${r}">…</strong><span th:if="${!it.last}">, </span>
+    </span>.
+    The new file will still be extracted and queued for admin review.
+  </p>
+  <p class="muted" th:if="${param.deleted}">Deleted.</p>
+  <p class="banner banner-error" th:if="${uploadError}" th:text="${uploadError}">error</p>
+
+  <!-- ============================================================
+       VIEW 1: Upload questions — compose, file upload, paste
+       ============================================================ -->
+  <div id="view-upload" class="uploads-view">
   <p class="uploads-hint" th:if="${isAdmin}">
     Drop study documents here — Claude extracts practice questions in the background and posts survivors to
     <a href="/admin/questions">Question review</a> for your approval.<br />
@@ -271,41 +341,6 @@
   <p class="muted unsupported" th:if="${budgetExhausted and not isAdmin}">
     Uploads are temporarily paused — daily extraction quota exhausted. Try again after UTC midnight.
   </p>
-
-  <p class="muted" th:if="${uploadedCount != null and uploadedCount > 0}">
-    Uploaded <span th:text="${uploadedCount}">0</span> file(s)<span th:if="${uploadedExam != null}"> for <code th:text="${uploadedExam}">exam</code></span>.
-    Extraction is running now — refresh in ~30 s.
-  </p>
-  <p class="muted" th:if="${retriedId != null}">
-    Re-queued upload #<span th:text="${retriedId}">0</span> for extraction.
-  </p>
-  <p class="muted unsupported" th:if="${rejected != null and not #lists.isEmpty(rejected)}">
-    Rejected:
-    <span th:each="r, it : ${rejected}">
-      <span th:text="${r}">…</span><span th:if="${!it.last}">, </span>
-    </span>
-  </p>
-  <!-- Re-upload warning. The file still gets extracted and queued; this is
-       just a heads-up so the user knows we noticed and the admin queue
-       will surface the per-question duplicate badges. -->
-  <p class="banner banner-warn"
-     th:if="${duplicateUploads != null and not #lists.isEmpty(duplicateUploads)}"
-     style="background:#fef3c7; border-left:3px solid #f59e0b; padding:10px 12px; border-radius:4px; color:#78350f;">
-    ⚠ Re-upload detected — same file content as an earlier submission:
-    <span th:each="r, it : ${duplicateUploads}">
-      <strong th:text="${r}">…</strong><span th:if="${!it.last}">, </span>
-    </span>.
-    The new file will still be extracted and queued for admin review.
-    If the admin approves an extracted question that matches a previously
-    approved one, the older version is retired automatically.
-  </p>
-  <p class="muted" th:if="${param.deleted}">Deleted.</p>
-  <p class="banner banner-error" th:if="${uploadError}" th:text="${uploadError}">error</p>
-
-  <div class="page-section">
-    <h2><span class="num">1</span> Upload questions</h2>
-    <p class="page-section-sub">Pick how you want to contribute — compose a question yourself, upload a file/screenshot, or paste text from anywhere.</p>
-  </div>
 
   <section class="admin-section" style="background:#f0f7ff;border:1px solid #bfdbfe;">
     <h2 style="margin-bottom:6px;">Compose a question from scratch</h2>
@@ -610,10 +645,15 @@
   })();
   </script>
 
-  <div class="page-section">
-    <h2><span class="num">2</span> Status of your uploads</h2>
-    <p class="page-section-sub">Track what's been processed. Files that need action surface at the top; everything else is the running report — auto-refreshing every few seconds.</p>
-  </div>
+  </div><!-- /#view-upload -->
+
+  <!-- ============================================================
+       VIEW 2: Status of your uploads — Needs attention + Recent
+       ============================================================ -->
+  <div id="view-status" class="uploads-view">
+  <p class="muted" style="margin-top: 0;">
+    Track what's been processed. Files that need action surface at the top; everything else is the running report — auto-refreshing every few seconds.
+  </p>
 
   <section class="admin-section" id="filesSection" th:attr="data-is-admin=${isAdmin}">
     <div id="filesContainer">
@@ -986,6 +1026,40 @@
     start();
   })();
   </script>
-</main>
+  </div><!-- /#view-status -->
+
+  </main><!-- /.uploads-content -->
+</div><!-- /.uploads-layout -->
+
+<script>
+// Left-nav view toggle. The URL hash selects which view is active
+// (#upload or #status). On first load we read the hash; if absent,
+// we auto-route to #status when the server flashed a post-upload
+// marker (data-flashed on .uploads-layout) — so users who just
+// clicked Upload land on the progress view, not the form they
+// already submitted. Otherwise default to #upload.
+(function () {
+  const layout = document.querySelector('.uploads-layout');
+  const navLinks = document.querySelectorAll('.uploads-nav a[data-view]');
+  const views = document.querySelectorAll('.uploads-view');
+  if (!layout || !navLinks.length || !views.length) return;
+
+  function show(name) {
+    views.forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('data-view') === name));
+  }
+  function fromHash() {
+    const h = (window.location.hash || '').replace('#', '');
+    return (h === 'status' || h === 'upload') ? h : null;
+  }
+  const flashed = layout.hasAttribute('data-flashed');
+  show(fromHash() || (flashed ? 'status' : 'upload'));
+
+  window.addEventListener('hashchange', () => { show(fromHash() || 'upload'); });
+  navLinks.forEach(a => a.addEventListener('click', () => {
+    show(a.getAttribute('data-view'));
+  }));
+})();
+</script>
 </body>
 </html>
