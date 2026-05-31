@@ -114,6 +114,7 @@ public class QuizController {
                 req.totalQuestions(), req.correctCount(),
                 req.incorrectCount(), req.unansweredCount(),
                 req.questionIds() == null ? java.util.List.of() : req.questionIds(),
+                req.mode(),
                 answers));
         return ResponseEntity.noContent().build();
     }
@@ -127,6 +128,7 @@ public class QuizController {
             int incorrectCount,
             int unansweredCount,
             java.util.List<Long> questionIds,
+            String mode,
             java.util.List<AttemptAnswerRequest> answers
     ) {}
 

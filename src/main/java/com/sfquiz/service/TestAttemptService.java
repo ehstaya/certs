@@ -55,7 +55,9 @@ public class TestAttemptService {
     /** Server-validated input shape from the quiz UI's finalize-test POST.
      *  {@code questionIds} captures the EXACT set of questions served in
      *  the order they were rendered — drives the "Retake same test" flow
-     *  by letting us re-serve the same set instead of a fresh random sample. */
+     *  by letting us re-serve the same set instead of a fresh random sample.
+     *  {@code mode} ("PRACTICE"/"EXAM") records whether this attempt was
+     *  a feedback-everywhere practice session or a strict real-exam run. */
     public record RecordRequest(
             String examSlug,
             Instant startedAt,
@@ -65,6 +67,7 @@ public class TestAttemptService {
             int incorrectCount,
             int unansweredCount,
             List<Long> questionIds,
+            String mode,
             List<AnswerDetail> answers
     ) {}
 
@@ -94,6 +97,17 @@ public class TestAttemptService {
         a.setScorePercent(score);
         a.setPassingScorePercent(e.getPassingScorePercent());
         a.setPassed(score >= e.getPassingScorePercent());
+
+        // Parse + persist the delivery mode. Unknown / null values fall
+        // back to PRACTICE so a malformed client request can't accidentally
+        // mark an attempt as a real exam run.
+        if (req.mode() != null) {
+            try {
+                a.setMode(TestAttempt.Mode.valueOf(req.mode().trim().toUpperCase()));
+            } catch (IllegalArgumentException ignored) {
+                a.setMode(TestAttempt.Mode.PRACTICE);
+            }
+        }
 
         // Snapshot the original question set so the user can re-attempt
         // this exact test later via /index.html?retake=<id>. Stored as
@@ -206,6 +220,9 @@ public class TestAttemptService {
              *  retaken via /?retake=<attemptId>. Pre-feature legacy rows
              *  return false and the UI hides the Retake button. */
             boolean retakeable,
+            /** "PRACTICE" or "EXAM" — the delivery mode of this attempt.
+             *  Used to label rows on the per-test report. */
+            String mode,
             List<AttemptAnswerDetail> items,
             // Pagination metadata for the detail page.
             int page,           // current page (1-based for the URL)
@@ -334,6 +351,7 @@ public class TestAttemptService {
                     r.isCorrect()));
         }
         boolean retakeable = a.getQuestionIds() != null && !a.getQuestionIds().isBlank();
+        String modeLabel = a.getMode() == null ? "PRACTICE" : a.getMode().name();
         return new AttemptDetailView(
                 a.getId(),
                 a.getExam() == null ? "" : a.getExam().getSlug(),
@@ -343,6 +361,7 @@ public class TestAttemptService {
                 a.getScorePercent(), a.isPassed(),
                 a.getFinishedAt(),
                 retakeable,
+                modeLabel,
                 items,
                 page, pageSize, totalItems, totalPages);
     }

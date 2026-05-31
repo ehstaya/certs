@@ -5,6 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Choose a practice exam</title>
   <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    /* Two-CTA card variant — adds a flex action row + a small mode hint */
+    .exam-card--dual { display: flex; flex-direction: column; cursor: default; }
+    .exam-card--dual:hover { transform: none; box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.06); }
+    .exam-card-actions {
+      display: flex; gap: 10px; flex-wrap: wrap;
+      padding: 12px 16px 4px; border-top: 1px solid var(--gray-200, #e5e7eb);
+    }
+    .exam-card-actions .btn { flex: 1; text-align: center; text-decoration: none; }
+    /* "Exam" CTA — distinct warm tone so users see this is the serious option */
+    .btn-exam {
+      background: #fff;
+      color: #b45309;
+      border: 1px solid #f59e0b;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .btn-exam:hover { background: #fef3c7; color: #92400e; }
+    .exam-card-modehint {
+      padding: 8px 16px 14px;
+      font-size: 12px;
+      color: var(--gray-600, #4b5563);
+      line-height: 1.5;
+    }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -75,10 +101,14 @@
           }
           grid.innerHTML = "";
           exams.forEach(function (ex) {
-            const a = document.createElement("a");
-            a.className = "exam-card";
-            a.href = "/topic-info.html?exam=" + encodeURIComponent(ex.slug);
-            a.innerHTML =
+            // Card is now a div (not <a>) so we can host two distinct CTAs:
+            //   Practice — feedback after every answer, navigate freely.
+            //   Exam     — strict sequential, no feedback until Finish.
+            // The mode rides through topic-info into the quiz URL.
+            const card = document.createElement("div");
+            card.className = "exam-card exam-card--dual";
+            const slug = encodeURIComponent(ex.slug);
+            card.innerHTML =
               '<div class="exam-card-body">' +
                 '<h2 class="exam-card-name">' + esc(ex.name) + '</h2>' +
                 '<p class="exam-card-desc">' + esc(ex.description || "") + '</p>' +
@@ -88,8 +118,16 @@
                 '<span class="exam-chip">' + ex.durationMinutes + ' min</span>' +
                 '<span class="exam-chip">' + ex.questionCount + ' in bank</span>' +
               '</div>' +
-              '<div class="exam-card-cta">Start practice ›</div>';
-            grid.appendChild(a);
+              '<div class="exam-card-actions">' +
+                '<a class="btn btn-primary" href="/topic-info.html?exam=' + slug + '&mode=practice">Start practice ›</a>' +
+                '<a class="btn btn-exam" href="/topic-info.html?exam=' + slug + '&mode=exam"' +
+                   ' title="Real-exam simulation: no feedback during the test, no skipping, no going back. Score + review only at the end.">Start exam ›</a>' +
+              '</div>' +
+              '<div class="exam-card-modehint">' +
+                '<strong>Practice</strong>: see correct / wrong + explanation after every answer.<br/>' +
+                '<strong>Exam</strong>: simulate the real test — answer each in order, no feedback until Finish.' +
+              '</div>';
+            grid.appendChild(card);
           });
         } catch (e) {
           grid.innerHTML = '<div class="picker-empty">Could not load exams: ' + esc(e.message) + '</div>';

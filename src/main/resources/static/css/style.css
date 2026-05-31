@@ -192,7 +192,9 @@ body.resizing * { cursor: col-resize !important; user-select: none !important; }
 .qlist .q-status.correct { color: #15803d; }
 .qlist .q-status.incorrect { color: #b91c1c; }
 .qlist .q-status.skipped { color: #b45309; }
+.qlist .q-status.answered { color: #0369a1; } /* exam-mode neutral "Answered" tag */
 .qlist li.active .q-status.skipped { color: #fbbf24; }
+.qlist li.active .q-status.answered { color: #38bdf8; }
 .qlist .q-text {
   font-size: 12px;
   color: var(--gray-500);

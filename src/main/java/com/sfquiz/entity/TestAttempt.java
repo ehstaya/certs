@@ -71,6 +71,21 @@ public class TestAttempt {
     @Column(name = "question_ids", columnDefinition = "TEXT")
     private String questionIds;
 
+    /** Two delivery modes for the test:
+     *    PRACTICE — open-book style. Per-question feedback (correct/wrong
+     *               banner + explanation + help URL + vote bar) shows
+     *               immediately after submit. User can navigate freely,
+     *               skip, retest. This is the default for legacy rows.
+     *    EXAM     — real-exam simulation. No mid-test feedback, no votes,
+     *               no skipping, no going back. Sequential answer-then-
+     *               next flow. Score and full review only after Finish. */
+    public enum Mode { PRACTICE, EXAM }
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mode", length = 16, nullable = false)
+    @org.hibernate.annotations.ColumnDefault("'PRACTICE'")
+    private Mode mode = Mode.PRACTICE;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public User getUser() { return user; }
@@ -99,4 +114,6 @@ public class TestAttempt {
     public void setPassed(boolean passed) { this.passed = passed; }
     public String getQuestionIds() { return questionIds; }
     public void setQuestionIds(String questionIds) { this.questionIds = questionIds; }
+    public Mode getMode() { return mode; }
+    public void setMode(Mode mode) { this.mode = mode == null ? Mode.PRACTICE : mode; }
 }

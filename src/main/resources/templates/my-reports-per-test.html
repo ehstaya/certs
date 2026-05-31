@@ -108,10 +108,16 @@
     </p>
     <div class="empty" th:if="${#lists.isEmpty(rows)}">No attempts on this test yet.</div>
     <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
-      <thead><tr><th>Finished</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th><th>Retake</th></tr></thead>
+      <thead><tr><th>Finished</th><th>Mode</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th><th>Retake</th></tr></thead>
       <tbody>
         <tr th:each="a : ${rows}">
           <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td>
+            <span th:if="${a.mode != null and a.mode.name() == 'EXAM'}"
+                  style="display:inline-block; padding:2px 8px; border-radius:999px; background:#fef3c7; color:#92400e; font-size:11px; font-weight:600; letter-spacing:.3px;">EXAM</span>
+            <span th:unless="${a.mode != null and a.mode.name() == 'EXAM'}"
+                  style="display:inline-block; padding:2px 8px; border-radius:999px; background:#e0f2fe; color:#075985; font-size:11px; font-weight:600; letter-spacing:.3px;">PRACTICE</span>
+          </td>
           <td th:text="${a.scorePercent + '%'}">0%</td>
           <td>
             <a th:if="${a.correctCount > 0}"

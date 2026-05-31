@@ -21,6 +21,13 @@
   let examSlug = null;
   let practiceCount = 60;
 
+  // Delivery mode for this session: "practice" (default) or "exam".
+  //   practice — feedback after every submit, can navigate / skip / retest.
+  //   exam     — no feedback until Finish, no skipping, no going back,
+  //              answers locked once submitted. Real-test simulation.
+  let testMode = "practice";
+  function isExamMode() { return testMode === "exam"; }
+
   const detail = {
     filter: null, // "correct" | "incorrect"
     page: 0,
@@ -65,6 +72,9 @@
   async function init() {
     examSlug = getExamSlug();
     const retakeId = getRetakeAttemptId();
+    // Mode: "exam" enables strict simulation; anything else is practice.
+    const modeParam = (new URLSearchParams(window.location.search).get("mode") || "").toLowerCase();
+    testMode = modeParam === "exam" ? "exam" : "practice";
     if (!examSlug && !retakeId) { window.location.href = "/exams.html"; return; }
     await loadCurrentUser();
     try {
@@ -121,9 +131,10 @@
 
   function applyExamBranding(meta) {
     const name = meta && meta.name ? meta.name : "Practice Exam";
+    const modeLabel = isExamMode() ? "Exam mode" : "Practice";
     const brand = document.querySelector(".brand");
-    if (brand) brand.textContent = name + " — " + practiceCount + " Questions";
-    document.title = name + " — Practice";
+    if (brand) brand.textContent = name + " — " + practiceCount + " Questions · " + modeLabel;
+    document.title = name + " — " + modeLabel;
     const progress = $("#progressText");
     if (progress) progress.textContent = "0/" + practiceCount;
     // The reset-timer tooltip is hardcoded "Reset timer to 90:00" in
@@ -230,9 +241,19 @@
       let statusClass = "";
       let statusText = "";
       if (ans && ans.submitted) {
-        statusClass = ans.correct ? "correct" : "incorrect";
-        statusText = ans.correct ? "Correct" : "Incorrect";
-      } else if (ans && ans.visited && i !== state.index) {
+        if (isExamMode()) {
+          // Exam mode hides correctness during the test — show a neutral
+          // "Answered" tag instead so the user can still tell which
+          // questions they've completed.
+          statusClass = "answered";
+          statusText = "Answered";
+        } else {
+          statusClass = ans.correct ? "correct" : "incorrect";
+          statusText = ans.correct ? "Correct" : "Incorrect";
+        }
+      } else if (!isExamMode() && ans && ans.visited && i !== state.index) {
+        // "Skipped" only applies in practice — exam mode doesn't let you
+        // skip, so this branch never fires there.
         statusClass = "skipped";
         statusText = "Skipped";
       }
@@ -297,26 +318,44 @@
       wrap.appendChild(div);
     });
 
-    // Banner / explanation / locked styling
+    // Banner / explanation / locked styling.
+    // In EXAM mode: never reveal correctness, explanation, or vote until
+    // the user finishes the test — this is the whole point of the mode.
     if (ans.submitted) {
-      applyResultStyling(q, ans);
-      showBanner(ans.correct);
-      showExplanation(q, ans);
+      if (isExamMode()) {
+        $("#resultBanner").classList.add("hidden");
+        $("#explanationBox").classList.add("hidden");
+        $("#voteBar").classList.add("hidden");
+      } else {
+        applyResultStyling(q, ans);
+        showBanner(ans.correct);
+        showExplanation(q, ans);
+      }
       $("#submitBtn").disabled = true;
     } else {
       $("#resultBanner").classList.add("hidden");
       $("#explanationBox").classList.add("hidden");
+      if (isExamMode()) $("#voteBar").classList.add("hidden");
       $("#submitBtn").disabled = timer.state === "expired";
     }
 
-    // Nav buttons
-    $("#backBtn").disabled = state.index === 0;
+    // Nav buttons.
+    // EXAM mode: Back is always disabled (you can't revisit answered
+    // questions), and Next is disabled until the current answer is
+    // submitted (no skipping). PRACTICE mode keeps the existing freedom
+    // to skip/back-navigate.
+    const nextBtn = $("#nextBtn");
+    const isLast = state.index === total - 1;
+    if (isExamMode()) {
+      $("#backBtn").disabled = true;
+      nextBtn.disabled = !ans.submitted;
+    } else {
+      $("#backBtn").disabled = state.index === 0;
+      nextBtn.disabled = false;
+    }
     // On the last question the Next button is repurposed as "Finish test"
     // so users don't have to scroll up to the small Finish button. The
     // onNextClicked handler routes to onFinish based on data-role.
-    const nextBtn = $("#nextBtn");
-    const isLast = state.index === total - 1;
-    nextBtn.disabled = false;
     nextBtn.dataset.role = isLast ? "finish" : "next";
     nextBtn.textContent = isLast ? "Finish test ›" : "Next question ›";
 
@@ -325,8 +364,9 @@
       el.classList.toggle("active", parseInt(el.dataset.index, 10) === state.index);
     });
 
-    // Refresh vote state for this question.
-    loadVoteStats(q.id);
+    // Refresh vote stats — but only in practice. In exam mode the vote
+    // bar is hidden anyway and the network call is wasted.
+    if (!isExamMode()) loadVoteStats(q.id);
   }
 
   /* ===========================================================
@@ -614,6 +654,15 @@
   function goTo(i) {
     if (i < 0 || i >= state.questions.length) return;
     if (i === state.index) return;
+    // EXAM mode locks navigation to "forward by one after submitting the
+    // current answer". Sidebar jumps and Back are both no-ops here so a
+    // user can't cheat by skipping back to compare answers.
+    if (isExamMode()) {
+      if (i !== state.index + 1) return;
+      const curQ = state.questions[state.index];
+      const curAns = state.answers.get(curQ.id);
+      if (!curAns || !curAns.submitted) return;
+    }
     // Verifier role: block any navigation (Next button, Back, or sidebar click)
     // until the current question has a vote with reason. Show the on-page error.
     if (verifierNeedsVote()) {
@@ -749,6 +798,7 @@
         // Snapshot of the exact set + order served this session, so the
         // user can retake this same test later via /index.html?retake=<id>.
         questionIds: state.questions.map(function (q) { return q.id; }),
+        mode: testMode.toUpperCase(),
         answers: answers,
       }),
     }).catch(function () { /* don't block UX on a recording failure */ });
@@ -946,6 +996,11 @@
       goTo(state.index + 1);
       return;
     }
+    // EXAM mode: no skip warning, no advance. The button is disabled in
+    // renderQuestion when there's no submitted answer, so we should
+    // never hit this path — but guard anyway in case a stray keystroke
+    // triggers it.
+    if (isExamMode()) return;
     showConfirmPanel({
       title: "Skip this question?",
       body: "You haven't submitted an answer yet. If you skip, this question will be marked as Skipped — you can come back to it from the sidebar before you finish the test.",

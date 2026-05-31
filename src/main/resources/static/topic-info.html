@@ -57,6 +57,16 @@
       <div>Passing score: <strong id="passingScore">—</strong></div>
     </div>
 
+    <!-- Banner shows whether the user is about to start an exam-mode run
+         (strict, no feedback) so there's no surprise. Hidden by default;
+         the JS reveals it when the URL carries mode=exam. -->
+    <div id="examModeBanner"
+         style="display:none; background:#fef3c7; border-left:3px solid #f59e0b; color:#92400e; padding:10px 14px; border-radius:6px; margin: 12px 0 6px; font-size: 14px;">
+      <strong>⚠ Exam mode</strong> — real-test simulation. Once you start:
+      no feedback on individual answers, no skipping, no going back. You'll
+      see your score + full review only after Finish.
+    </div>
+
     <div class="topic-actions">
       <a class="btn" href="/exams.html">Back</a>
       <a class="btn btn-primary" id="startBtn" href="#">Start test →</a>
@@ -70,8 +80,17 @@
   const slug = params.get("exam");
   if (!slug) { window.location.href = "/exams.html"; return; }
 
+  // Forward the mode (practice|exam) through to the quiz launch URL.
+  // Defaults to "practice" — quiz.js treats unknown / missing as practice.
+  const mode = (params.get("mode") || "practice").toLowerCase();
   const startBtn = document.getElementById("startBtn");
-  startBtn.href = "/index.html?exam=" + encodeURIComponent(slug);
+  startBtn.href = "/index.html?exam=" + encodeURIComponent(slug)
+                  + (mode === "exam" ? "&mode=exam" : "");
+  if (mode === "exam") {
+    const banner = document.getElementById("examModeBanner");
+    if (banner) banner.style.display = "";
+    startBtn.textContent = "Start exam →";
+  }
 
   try {
     const meRes = await fetch("/api/me", { credentials: "same-origin" });
