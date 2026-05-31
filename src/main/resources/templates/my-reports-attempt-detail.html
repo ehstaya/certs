@@ -149,9 +149,16 @@
 
     <!-- Retake-same-test entry point. Available for every attempt; the
          server reconstructs the question set from the snapshot (preferred)
-         or the submitted answer rows (legacy attempts). -->
+         or the submitted answer rows (legacy attempts). Mode rides along
+         so an EXAM attempt retakes in EXAM (locked-down) mode and a
+         practice attempt retakes in practice. -->
     <p style="margin: 8px 0 16px;">
-      <a class="btn btn-primary" th:href="@{|/?retake=${detail.attemptId}|}">
+      <a th:if="${detail.mode == 'EXAM'}"
+         class="btn btn-primary" th:href="@{|/?retake=${detail.attemptId}&mode=exam|}">
+        ↻ Retake this exact test (real exam)
+      </a>
+      <a th:unless="${detail.mode == 'EXAM'}"
+         class="btn btn-primary" th:href="@{|/?retake=${detail.attemptId}|}">
         ↻ Retake this exact test
       </a>
       <span class="muted" style="margin-left:10px; font-size:13px;">

@@ -161,8 +161,16 @@
                  replay the saved snapshot; legacy rows fall back to the
                  questions the user actually submitted; the rare attempt
                  with zero answers redirects to a fresh sample. The server
-                 decides which path; the button is the same. -->
-            <a th:href="@{|/?retake=${a.id}|}"
+                 decides which path; the button is the same.
+                 Mode rides along so an EXAM-mode attempt retakes in
+                 EXAM mode (locked-down UI), and a practice attempt
+                 retakes in practice. -->
+            <a th:if="${a.mode != null and a.mode.name() == 'EXAM'}"
+               th:href="@{|/?retake=${a.id}&mode=exam|}"
+               class="btn btn-primary btn-sm"
+               title="Retake this same set of questions in real-exam mode — no feedback during the test.">↻ Retake</a>
+            <a th:unless="${a.mode != null and a.mode.name() == 'EXAM'}"
+               th:href="@{|/?retake=${a.id}|}"
                class="btn btn-primary btn-sm"
                title="Take this same set of questions again — useful for spaced repetition.">↻ Retake</a>
           </td>
