@@ -585,6 +585,20 @@
       showVerifierVoteBlock();
       return;
     }
+    // Jumping forward in the sidebar is an implicit skip of every
+    // unanswered question between here and the target — mark them
+    // visited so they show as "Skipped" in the sidebar. Jumping
+    // backward is plain navigation and never auto-skips anything.
+    // Submitted answers are left alone (visited is already true).
+    if (i > state.index) {
+      for (let j = state.index + 1; j < i; j++) {
+        const interQ = state.questions[j];
+        const interAns = state.answers.get(interQ.id);
+        if (interAns && !interAns.submitted) {
+          interAns.visited = true;
+        }
+      }
+    }
     state.index = i;
     renderQuestion();
     renderSidebar();
