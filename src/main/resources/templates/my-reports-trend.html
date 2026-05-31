@@ -30,6 +30,13 @@
     .trend-mark { stroke-width: 2; }
     .trend-mark-pass { fill: #fff; stroke: #047857; }
     .trend-mark-fail { fill: #fff; stroke: #b91c1c; }
+    /* Exam-mode attempts get a solid amber fill on top of the pass/fail
+       ring so they pop out from the cluster of practice attempts. */
+    .trend-mark.is-exam.trend-mark-pass { fill: #f59e0b; }
+    .trend-mark.is-exam.trend-mark-fail { fill: #f59e0b; }
+    .trend-legend { display: flex; gap: 18px; align-items: center; margin: 4px 0 12px; font-size: 12px; color: var(--gray-700, #374151); }
+    .trend-legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; border: 2px solid #047857; background: #fff; }
+    .trend-legend .swatch.exam { background: #f59e0b; border-color: #b45309; }
     .legend { display: flex; gap: 18px; font-size: 13px; color: var(--gray-700, #374151); margin: 8px 0 16px; flex-wrap: wrap; }
     .legend-swatch { display: inline-block; width: 12px; height: 12px; vertical-align: middle; margin-right: 6px; border-radius: 50%; }
     .legend-line { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 2px; background: var(--brand-primary, #0176D3); }
@@ -160,25 +167,41 @@
               th:if="${#lists.size(trend) == 1}"
               th:x1="${markers[0][0] - 18}" th:x2="${markers[0][0] + 18}"
               th:y1="${markers[0][1]}"      th:y2="${markers[0][1]}" />
-        <!-- Tiny markers as hover targets so users can still see exact
-             per-attempt scores; pass/fail conveyed by ring color. -->
+        <!-- Tiny markers as hover targets. Pass/fail = ring color,
+             practice/exam = fill (hollow vs. solid amber). The mode
+             also appears in the hover tooltip + per-row table below. -->
         <g>
-          <circle th:each="m : ${markers}"
-                  th:cx="${m[0]}" th:cy="${m[1]}" r="3.5"
+          <circle th:each="m, it : ${markers}"
+                  th:with="att=${trend[it.index]},isExam=${att.mode != null and att.mode.name() == 'EXAM'}"
+                  th:cx="${m[0]}" th:cy="${m[1]}"
+                  th:attr="r=${isExam ? 4.5 : 3.5}"
                   class="trend-mark"
-                  th:classappend="${m[3] == 1} ? 'trend-mark-pass' : 'trend-mark-fail'">
-            <title th:text="|Attempt #${m[4]}: ${m[2]}% — ${m[3] == 1 ? 'PASS' : 'FAIL'}|">0%</title>
+                  th:classappend="${(m[3] == 1 ? 'trend-mark-pass ' : 'trend-mark-fail ') + (isExam ? 'is-exam' : '')}">
+            <title th:text="|Attempt #${m[4]}: ${m[2]}% — ${m[3] == 1 ? 'PASS' : 'FAIL'} (${isExam ? 'Real exam' : 'Practice'})|">0%</title>
           </circle>
         </g>
       </svg>
+      <!-- Legend so users know what the amber dots mean. -->
+      <div class="trend-legend">
+        <span><span class="swatch"></span>Practice attempt</span>
+        <span><span class="swatch exam"></span>Real exam attempt</span>
+      </div>
 
       <h2>Each attempt</h2>
       <table class="admin-table">
-        <thead><tr><th>#</th><th>Finished</th><th>Score</th><th>Result</th><th>Time</th></tr></thead>
+        <thead><tr><th>#</th><th>Finished</th><th>Mode</th><th>Score</th><th>Result</th><th>Time</th></tr></thead>
         <tbody>
           <tr th:each="a, it : ${trend}">
             <td th:text="${it.index + 1}">1</td>
             <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+            <td>
+              <!-- Same pill styling as the per-test report so mode reads
+                   consistently across the My reports section. -->
+              <span th:if="${a.mode != null and a.mode.name() == 'EXAM'}"
+                    style="display:inline-block; padding:2px 8px; border-radius:999px; background:#fef3c7; color:#92400e; font-size:11px; font-weight:600; letter-spacing:.3px;">REAL EXAM</span>
+              <span th:unless="${a.mode != null and a.mode.name() == 'EXAM'}"
+                    style="display:inline-block; padding:2px 8px; border-radius:999px; background:#e0f2fe; color:#075985; font-size:11px; font-weight:600; letter-spacing:.3px;">PRACTICE</span>
+            </td>
             <td th:text="${a.scorePercent + '%'}">0%</td>
             <td>
               <span th:classappend="${a.passed} ? 'pct-pill good' : 'pct-pill bad'"
