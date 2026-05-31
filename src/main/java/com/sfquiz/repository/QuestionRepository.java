@@ -37,6 +37,15 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
 
     long countByExamAndStatus(Exam exam, Question.Status status);
 
+    /** Single-query "approved count per exam id" — used by the listings
+     *  page + topbar /api/exams call to avoid the per-exam countByExamAndStatus
+     *  N+1 that was firing once per page load. Returns Object[] tuples of
+     *  (examId :: Long, approvedCount :: Long). */
+    @Query("SELECT q.exam.id, COUNT(q) FROM Question q " +
+           "WHERE q.status = com.sfquiz.entity.Question.Status.APPROVED " +
+           "GROUP BY q.exam.id")
+    List<Object[]> countApprovedByExam();
+
     Optional<Question> findFirstByExamOrderByNumberDesc(Exam exam);
 
     boolean existsByExamAndText(Exam exam, String text);

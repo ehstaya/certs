@@ -46,10 +46,20 @@ public class ExamService {
 
     /** All active exams, for the picker. Empty exams are still listed so users
      *  can upload study material against them — the JS picker can mark them
-     *  as "no questions yet" if it wants to. */
+     *  as "no questions yet" if it wants to.
+     *
+     *  Was N+1 (one COUNT(*) per exam). Now: 2 queries — the exam list, plus
+     *  a single GROUP BY for approved counts — assembled in-memory. Hit on
+     *  every page that calls /api/exams (i.e. essentially every page), so
+     *  this was the dominant cost on signed-in navigation. */
     public List<ExamDto> listActive() {
-        return exams.findByActiveTrueOrderBySortOrderAscNameAsc().stream()
-                .map(e -> ExamDto.from(e, questions.countByExamAndStatus(e, Question.Status.APPROVED)))
+        List<Exam> activeExams = exams.findByActiveTrueOrderBySortOrderAscNameAsc();
+        java.util.Map<Long, Long> approvedByExamId = new java.util.HashMap<>();
+        for (Object[] row : questions.countApprovedByExam()) {
+            approvedByExamId.put((Long) row[0], ((Number) row[1]).longValue());
+        }
+        return activeExams.stream()
+                .map(e -> ExamDto.from(e, approvedByExamId.getOrDefault(e.getId(), 0L)))
                 .toList();
     }
 
