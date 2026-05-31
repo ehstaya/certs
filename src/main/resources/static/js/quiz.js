@@ -149,6 +149,21 @@
     const brand = document.querySelector(".brand");
     if (brand) brand.textContent = name + " — " + practiceCount + " Questions · " + modeLabel;
     document.title = name + " — " + modeLabel;
+    // The header badge is hardcoded "Practice mode (Beta)" in the template.
+    // Swap its text + class when the user is in a real-exam run so they
+    // (and admins watching screenshots) never see "Practice" during exam.
+    const badge = document.getElementById("modeBadge");
+    if (badge) {
+      if (isExamMode()) {
+        badge.textContent = "Real exam mode";
+        badge.classList.remove("badge-practice");
+        badge.classList.add("badge-exam");
+      } else {
+        badge.textContent = "Practice mode (Beta)";
+        badge.classList.remove("badge-exam");
+        badge.classList.add("badge-practice");
+      }
+    }
     const progress = $("#progressText");
     if (progress) progress.textContent = "0/" + practiceCount;
     // The reset-timer tooltip is hardcoded "Reset timer to 90:00" in

@@ -274,6 +274,19 @@ body.resizing * { cursor: col-resize !important; user-select: none !important; }
   font-size: 12px;
   font-weight: 600;
 }
+/* Warm-tone variant that the JS swaps to when mode=exam, so the header
+   badge clearly reads as the serious option instead of saying "Practice
+   mode" during a real-exam run. */
+.badge-exam {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #f59e0b;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .3px;
+}
 .progress-text {
   font-size: 13px;
   color: var(--gray-700);
