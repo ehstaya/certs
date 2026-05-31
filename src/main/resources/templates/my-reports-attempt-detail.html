@@ -140,9 +140,10 @@
       Review the explanations to lock in what you got right and learn from what you missed.
     </p>
 
-    <!-- Retake-same-test entry point. Only shown for attempts that captured
-         a question snapshot — legacy attempts can't replay the exact set. -->
-    <p th:if="${detail.retakeable}" style="margin: 8px 0 16px;">
+    <!-- Retake-same-test entry point. Available for every attempt; the
+         server reconstructs the question set from the snapshot (preferred)
+         or the submitted answer rows (legacy attempts). -->
+    <p style="margin: 8px 0 16px;">
       <a class="btn btn-primary" th:href="@{|/?retake=${detail.attemptId}|}">
         ↻ Retake this exact test
       </a>

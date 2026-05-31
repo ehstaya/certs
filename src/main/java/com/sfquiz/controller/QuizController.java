@@ -74,29 +74,19 @@ public class QuizController {
         if (auth == null || auth.getName() == null) return ResponseEntity.status(401).build();
         com.sfquiz.entity.TestAttempt attempt = attempts.findOwnedById(id, auth.getName());
         if (attempt == null) return ResponseEntity.status(404).build();
-        java.util.List<Long> ids = parseQuestionIds(attempt.getQuestionIds());
+        // resolveRetakeQuestionIds tries the snapshot first and falls back
+        // to the per-answer rows for legacy attempts — so every historical
+        // attempt with at least one submitted answer is retakeable.
+        java.util.List<Long> ids = attempts.resolveRetakeQuestionIds(attempt);
         if (ids.isEmpty()) {
-            // Pre-feature attempts (or any row with an empty snapshot) can't
-            // be retaken. 410 GONE signals "this resource existed but the
-            // data needed for retake is gone" — the UI hides the link for
-            // these so callers shouldn't see it in practice.
+            // Genuinely nothing recorded — pre-feature attempt with zero
+            // submitted answers. 410 GONE; the client redirects to a
+            // fresh sample on the same exam.
             return ResponseEntity.status(410).build();
         }
         return ResponseEntity.ok(new com.sfquiz.dto.ExamQuestionsResponse(
                 exams.toDto(attempt.getExam()),
                 service.listForRetake(ids)));
-    }
-
-    /** Parse the comma-separated id snapshot off TestAttempt.questionIds. */
-    private static java.util.List<Long> parseQuestionIds(String csv) {
-        if (csv == null || csv.isBlank()) return java.util.List.of();
-        java.util.List<Long> out = new java.util.ArrayList<>();
-        for (String part : csv.split(",")) {
-            String t = part.trim();
-            if (t.isEmpty()) continue;
-            try { out.add(Long.parseLong(t)); } catch (NumberFormatException ignored) { /* skip */ }
-        }
-        return out;
     }
 
     /** Record a completed test attempt for the signed-in user. Called from

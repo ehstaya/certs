@@ -136,15 +136,14 @@
                   th:text="${a.passed} ? 'PASS' : 'FAIL'">FAIL</span>
           </td>
           <td>
-            <!-- Retake-same-test: only available for attempts that captured
-                 their question set (post-feature rows). Legacy attempts
-                 don't have a snapshot so the column shows '—'. -->
-            <a th:if="${a.questionIds != null and not #strings.isEmpty(a.questionIds)}"
-               th:href="@{|/?retake=${a.id}|}"
-               class="btn btn-sm"
+            <!-- Retake-same-test: works for every attempt. Post-feature rows
+                 replay the saved snapshot; legacy rows fall back to the
+                 questions the user actually submitted; the rare attempt
+                 with zero answers redirects to a fresh sample. The server
+                 decides which path; the button is the same. -->
+            <a th:href="@{|/?retake=${a.id}|}"
+               class="btn btn-primary btn-sm"
                title="Take this same set of questions again — useful for spaced repetition.">↻ Retake</a>
-            <span th:unless="${a.questionIds != null and not #strings.isEmpty(a.questionIds)}"
-                  class="muted">—</span>
           </td>
         </tr>
       </tbody>

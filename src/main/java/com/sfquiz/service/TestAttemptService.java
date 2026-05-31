@@ -242,6 +242,38 @@ public class TestAttemptService {
         return a;
     }
 
+    /** Reconstruct the question-id list for a retake. Tries the explicit
+     *  snapshot first (post-feature attempts), then falls back to the
+     *  per-answer rows for legacy attempts whose set wasn't captured at
+     *  finalize-time. Order matches the original render order in both
+     *  paths. Returns an empty list when neither signal exists — the
+     *  controller turns that into a 410 and the client redirects to a
+     *  fresh sample on the same exam. */
+    @Transactional(readOnly = true)
+    public List<Long> resolveRetakeQuestionIds(TestAttempt attempt) {
+        if (attempt == null) return List.of();
+        String csv = attempt.getQuestionIds();
+        if (csv != null && !csv.isBlank()) {
+            List<Long> out = new ArrayList<>();
+            for (String part : csv.split(",")) {
+                String t = part.trim();
+                if (t.isEmpty()) continue;
+                try { out.add(Long.parseLong(t)); } catch (NumberFormatException ignored) { /* skip */ }
+            }
+            if (!out.isEmpty()) return out;
+        }
+        // Legacy fallback — pull whatever the user actually submitted. We
+        // lose the unanswered/skipped ones (no row was ever saved for
+        // those), so the replay may be shorter than the original total.
+        // Still useful: the user gets to redo every question they tried.
+        List<Long> reconstructed = new ArrayList<>();
+        for (TestAttemptAnswer r : answerRepo.findByAttemptOrderByIdAsc(attempt)) {
+            if (r.getQuestion() == null) continue;
+            reconstructed.add(r.getQuestion().getId());
+        }
+        return reconstructed;
+    }
+
     @Transactional(readOnly = true)
     public AttemptDetailView attemptDetail(String userEmail, Long attemptId,
                                            String filter, int page, int pageSize) {
