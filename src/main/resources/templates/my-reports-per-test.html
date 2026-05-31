@@ -121,14 +121,16 @@
         </div>
       </div>
 
-      <!-- Quick action — drill into the questions for review. -->
+      <!-- Quick actions — both rendered as proper buttons (Review =
+           solid primary, Retake = outlined secondary) so the click
+           affordance matches across the app. -->
       <div style="margin-top: 14px; display:flex; gap: 10px; flex-wrap: wrap;">
         <a class="btn btn-primary btn-sm"
            th:href="@{|/my/reports/attempts/${latestAttempt.id}|}">Review questions →</a>
-        <a class="btn btn-sm"
+        <a class="btn btn-secondary btn-sm"
            th:if="${latestAttempt.mode != null and latestAttempt.mode.name() == 'EXAM'}"
            th:href="@{|/?retake=${latestAttempt.id}&mode=exam|}">↻ Retake (real exam)</a>
-        <a class="btn btn-sm"
+        <a class="btn btn-secondary btn-sm"
            th:unless="${latestAttempt.mode != null and latestAttempt.mode.name() == 'EXAM'}"
            th:href="@{|/?retake=${latestAttempt.id}|}">↻ Retake (practice)</a>
       </div>

@@ -345,21 +345,50 @@ body.resizing * { cursor: col-resize !important; user-select: none !important; }
 }
 
 /* Buttons */
+/* Base button — used by both <button> and <a class="btn">. Without
+   text-decoration:none and inline-flex, anchor-styled buttons render
+   as underlined plain links. Variants (btn-primary, btn-secondary,
+   etc.) layer color + border on top of this. */
 .btn {
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
   padding: 8px 16px;
   border-radius: 6px;
   font-size: 14px;
   font-weight: 600;
-  transition: background .12s ease, transform .05s ease;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease, transform .05s ease;
+  white-space: nowrap;
 }
 .btn:active { transform: translateY(1px); }
+.btn:focus { outline: none; }
+.btn:focus-visible { box-shadow: 0 0 0 3px rgba(1, 118, 211, 0.25); }
 .btn-primary {
   background: var(--purple-600);
   color: #fff;
+  border-color: var(--purple-600);
 }
-.btn-primary:hover { background: var(--purple-500); }
+.btn-primary:hover { background: var(--purple-500); border-color: var(--purple-500); color: #fff; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Secondary — outlined white pill in brand colors. Used on rows where
+   we want a clickable action that's clearly a button but secondary in
+   weight to btn-primary (e.g. Retake on the per-test hero, "Browse"
+   in admin nav strips, etc.). */
+.btn-secondary {
+  background: #fff;
+  color: var(--brand-primary, #0176D3);
+  border-color: var(--brand-primary, #0176D3);
+}
+.btn-secondary:hover {
+  background: var(--brand-tint, #EAF5FE);
+  color: var(--brand-navy, #032D60);
+  border-color: var(--brand-navy, #032D60);
+}
 .btn-finish {
   background: #fff;
   color: var(--purple-600);
