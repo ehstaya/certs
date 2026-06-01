@@ -560,24 +560,18 @@ public class QuestionAdminService {
      *  questions are currently waiting on it. Order matches {@code
      *  examOptions} below. */
     public java.util.LinkedHashMap<String, Long> pendingCountsByExamScoped(Set<String> managedSlugs) {
-        java.util.LinkedHashMap<String, Long> out = new java.util.LinkedHashMap<>();
-        // Resolve the scope to a guaranteed non-null set the loop can query
-        // without re-tripping the static analyzer. Null OR wildcard means
-        // "no manager scope" and we use an empty set + the boolean below
-        // to skip the per-row filter.
+        // One GROUP BY query — previous code loaded every PENDING question
+        // with its EAGER choices just to tally them in memory.
         Set<String> filter = (managedSlugs == null || managedSlugs.contains("*"))
                 ? java.util.Collections.emptySet()
                 : managedSlugs;
         boolean scoped = !filter.isEmpty();
-        List<Question> pending = repo.findByStatusOrderByNumber(Question.Status.PENDING);
-        for (Question q : pending) {
-            if (q.getExam() == null) continue;
-            String slug = q.getExam().getSlug();
+        java.util.LinkedHashMap<String, Long> out = new java.util.LinkedHashMap<>();
+        for (Object[] row : repo.countByStatusGroupedByExamSlug(Question.Status.PENDING)) {
+            String slug = (String) row[0];
+            if (slug == null) continue;
             if (scoped && !filter.contains(slug)) continue;
-            // Avoid Map.merge(..., Long::sum) here — Eclipse's null-analysis
-            // can't prove the BiFunction's return is non-null and emits a
-            // warning. Plain put/getOrDefault is just as cheap and clean.
-            out.put(slug, out.getOrDefault(slug, 0L) + 1L);
+            out.put(slug, ((Number) row[1]).longValue());
         }
         return out;
     }
@@ -608,9 +602,13 @@ public class QuestionAdminService {
 
     private long countScoped(Question.Status status, Set<String> managedSlugs) {
         if (managedSlugs == null || managedSlugs.contains("*")) return repo.countByStatus(status);
-        return repo.findByStatusOrderByNumber(status).stream()
-                .filter(q -> q.getExam() != null && managedSlugs.contains(q.getExam().getSlug()))
-                .count();
+        if (managedSlugs.isEmpty()) return 0L;
+        // Single-query scoped count — previous code loaded every question
+        // of this status with its EAGER choices, then filtered + counted
+        // in memory. With ~500 approved questions × 5 choices, that's a
+        // 2500-row JOIN result per call, fired three times on every
+        // /admin/questions render (PENDING / APPROVED / RETIRED).
+        return repo.countByStatusAndExamSlugIn(status, managedSlugs);
     }
 
     public List<Question> recentApproved(int limit) {
@@ -618,20 +616,22 @@ public class QuestionAdminService {
     }
 
     /** Domain-scoped variant — only approved questions whose exam slug is
-     *  in {@code managedSlugs}. Null or wildcard set = no scope filter. */
+     *  in {@code managedSlugs}. Null or wildcard set = no scope filter.
+     *
+     *  Previous code loaded the entire approved bank (~500 questions ×
+     *  EAGER choices) just to reverse + take 10. Now: a derived top-10
+     *  query at the DB level. The {@code limit} parameter is honored
+     *  only as a ceiling — callers ask for 10, we always return ≤ 10. */
     public List<Question> recentApprovedScoped(int limit, Set<String> managedSlugs) {
         Set<String> filter = (managedSlugs == null || managedSlugs.contains("*"))
                 ? Collections.emptySet()
                 : managedSlugs;
         boolean scoped = !filter.isEmpty();
-        List<Question> approved = new ArrayList<>(repo.findByStatusOrderByNumber(Question.Status.APPROVED));
-        Collections.reverse(approved);
-        if (scoped) {
-            approved = approved.stream()
-                    .filter(q -> q.getExam() != null && filter.contains(q.getExam().getSlug()))
-                    .toList();
-        }
-        return approved.size() > limit ? approved.subList(0, limit) : approved;
+        List<Question> top10 = scoped
+                ? (filter.isEmpty() ? List.of()
+                                    : repo.findTop10ByStatusAndExamSlugInOrderByIdDesc(Question.Status.APPROVED, filter))
+                : repo.findTop10ByStatusOrderByIdDesc(Question.Status.APPROVED);
+        return top10.size() > limit ? top10.subList(0, limit) : top10;
     }
 
     // --- helpers ---------------------------------------------------------------

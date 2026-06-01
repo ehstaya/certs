@@ -165,6 +165,28 @@ public class VoteService {
             List<QuestionVoteRow> bottom  // lowest net votes (most "thumbs-down")
     ) {}
 
+    /** Totals-only per-exam report — for the /admin/reports dashboard's
+     *  per-exam summary which only renders up/down/totalVotes/percent and
+     *  doesn't need the top/bottom rows. One DB query per call instead of
+     *  three round trips per exam. */
+    public List<ExamQualityReport> totalsForExams(java.util.Collection<String> slugs) {
+        if (slugs == null || slugs.isEmpty()) return List.of();
+        List<Object[]> rows = votes.examTotalsForSlugs(slugs);
+        java.util.Map<String, Object[]> bySlug = new java.util.HashMap<>();
+        for (Object[] r : rows) bySlug.put((String) r[0], r);
+        List<ExamQualityReport> out = new java.util.ArrayList<>(slugs.size());
+        for (String slug : slugs) {
+            Object[] r = bySlug.get(slug);
+            long up = r == null || r[1] == null ? 0 : ((Number) r[1]).longValue();
+            long down = r == null || r[2] == null ? 0 : ((Number) r[2]).longValue();
+            long voted = r == null || r[3] == null ? 0 : ((Number) r[3]).longValue();
+            long total = r == null || r[4] == null ? 0 : ((Number) r[4]).longValue();
+            int pct = (up + down) <= 0 ? 0 : (int) Math.round(100.0 * up / (up + down));
+            out.add(new ExamQualityReport(slug, up, down, voted, total, pct, List.of(), List.of()));
+        }
+        return out;
+    }
+
     /** Build a quality report for one exam: totals + the top and bottom 10
      *  questions by net (up − down) vote score. */
     public ExamQualityReport buildReport(String examSlug) {

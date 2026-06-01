@@ -55,4 +55,19 @@ public interface QuestionVoteRepository extends JpaRepository<QuestionVote, Long
            " COUNT(v.id) " +
            "FROM QuestionVote v WHERE v.question.exam.slug = :slug")
     List<Object[]> examTotals(@Param("slug") String slug);
+
+    /** Same totals shape as {@link #examTotals} but bucketed per slug so
+     *  the /admin/reports dashboard's per-exam summary can be built from
+     *  ONE query instead of one buildReport call per exam (6 exams × 3
+     *  queries = 18 round trips on every dashboard render).
+     *  Row tuple: (slug, up, down, distinctVotedQuestions, totalVotes). */
+    @Query("SELECT v.question.exam.slug, " +
+           " SUM(CASE WHEN v.voteValue > 0 THEN 1 ELSE 0 END), " +
+           " SUM(CASE WHEN v.voteValue < 0 THEN 1 ELSE 0 END), " +
+           " COUNT(DISTINCT v.question.id), " +
+           " COUNT(v.id) " +
+           "FROM QuestionVote v " +
+           "WHERE v.question.exam.slug IN :slugs " +
+           "GROUP BY v.question.exam.slug")
+    List<Object[]> examTotalsForSlugs(@Param("slugs") java.util.Collection<String> slugs);
 }

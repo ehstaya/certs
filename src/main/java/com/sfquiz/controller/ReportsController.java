@@ -108,12 +108,13 @@ public class ReportsController {
     }
 
     /** Count questions with a given status, scoped to a slug set. Empty
-     *  slug set means "no access" → 0. Used by the dashboard cards. */
+     *  slug set means "no access" → 0. Used by the dashboard cards.
+     *  Single COUNT query — the old version loaded every question of
+     *  the status with its EAGER choices, then filtered + counted in
+     *  memory (fired three times per /admin/reports render). */
     private long countByStatusScoped(Question.Status status, Set<String> slugs) {
         if (slugs == null || slugs.isEmpty()) return 0;
-        return questions.findByStatusOrderByNumber(status).stream()
-                .filter(q -> q.getExam() != null && slugs.contains(q.getExam().getSlug()))
-                .count();
+        return questions.countByStatusAndExamSlugIn(status, slugs);
     }
 
     public record DashboardStats(
@@ -145,11 +146,12 @@ public class ReportsController {
         long retired  = countByStatusScoped(Question.Status.RETIRED,  slugSet);
 
         // Per-exam vote totals. For domain admins we only sum their certs.
+        // One DB query covers all visible exams — previous loop did up to
+        // 3 round trips per exam (6 exams × 3 = 18 queries on every render).
+        List<VoteService.ExamQualityReport> perExam = new ArrayList<>(
+                voteService.totalsForExams(exams.stream().map(ExamDto::slug).toList()));
         long up = 0, down = 0, totalVotes = 0;
-        List<VoteService.ExamQualityReport> perExam = new ArrayList<>();
-        for (ExamDto e : exams) {
-            VoteService.ExamQualityReport r = voteService.buildReport(e.slug());
-            perExam.add(r);
+        for (VoteService.ExamQualityReport r : perExam) {
             up += r.up();
             down += r.down();
             totalVotes += r.totalVotes();

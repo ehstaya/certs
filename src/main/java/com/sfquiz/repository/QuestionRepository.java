@@ -74,6 +74,33 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
     List<Object[]> findIdAndTopicForSampling(
             @Param("slug") String slug, @Param("status") Question.Status status);
 
+    /** Per-exam-slug counts for one status in a single GROUP BY — used by
+     *  the /admin/questions page's "Filter by certification" dropdown.
+     *  Previous code loaded every PENDING Question with its EAGER choices
+     *  just to tally by slug in memory. */
+    @Query("SELECT q.exam.slug, COUNT(q) FROM Question q " +
+           "WHERE q.status = :status AND q.exam IS NOT NULL " +
+           "GROUP BY q.exam.slug")
+    List<Object[]> countByStatusGroupedByExamSlug(@Param("status") Question.Status status);
+
+    /** Single-query scoped count — drops the need for non-superadmin
+     *  admins to load every question of a status into memory just to
+     *  filter + count. SUPERADMINs use countByStatus directly. */
+    @Query("SELECT COUNT(q) FROM Question q " +
+           "WHERE q.status = :status AND q.exam.slug IN :slugs")
+    long countByStatusAndExamSlugIn(
+            @Param("status") Question.Status status,
+            @Param("slugs") java.util.Collection<String> slugs);
+
+    /** Top-N recent approved by id desc — used by the /admin/questions
+     *  "Recently approved" panel. Limited at the DB so we don't fetch
+     *  the whole bank just to take the head. EAGER Choices still come
+     *  along for each row but the row count is bounded to ~10. */
+    List<Question> findTop10ByStatusOrderByIdDesc(Question.Status status);
+
+    List<Question> findTop10ByStatusAndExamSlugInOrderByIdDesc(
+            Question.Status status, java.util.Collection<String> slugs);
+
     Optional<Question> findFirstByExamOrderByNumberDesc(Exam exam);
 
     boolean existsByExamAndText(Exam exam, String text);
