@@ -167,8 +167,33 @@ body.resizing * { cursor: col-resize !important; user-select: none !important; }
 .sidebar {
   background: var(--gray-50);
   border-right: 1px solid var(--gray-200);
-  overflow-y: auto;
+  /* No internal scroll — the qlist is paginated client-side so the
+     visible page always fits inside the viewport. */
+  overflow: hidden;
   max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+.qlist-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--gray-200);
+  background: #fff;
+  margin-top: auto;
+}
+.qlist-pager .qlist-pageinfo {
+  font-size: 12px;
+  color: var(--gray-700);
+  font-weight: 600;
+  flex: 1;
+  text-align: center;
+}
+.qlist-pager button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .sidebar-header {
   padding: 16px 18px 8px;

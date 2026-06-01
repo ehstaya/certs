@@ -237,6 +237,15 @@
         // Re-fetch exam metadata only — we need durationMinutes, passingScorePercent,
         // and branding. Cheap one-shot GET, no harm if it fails (we fall back to defaults).
         await hydrateExamMetaForResume();
+        // Timer doesn't survive a logout / long absence: clear any
+        // stale countdown for this exam+user so initTimer starts fresh
+        // at the full duration. Per user feedback: keep the answers,
+        // reset the clock. Key construction mirrors initTimer().
+        try {
+          const u = state.user;
+          const email = (u && u.email) ? u.email : "anon";
+          localStorage.removeItem("sfquiz:timer:" + (examSlug || "default") + ":" + email);
+        } catch (e) { /* private mode — initTimer falls back to fresh anyway */ }
         state.questions = savedProgress.questions;
         state.questions.forEach((q) => state.answers.set(q.id, { selected: new Set(), submitted: false, correct: false, visited: false }));
         if (Array.isArray(savedProgress.answers)) {
@@ -435,12 +444,13 @@
       });
     }
 
-    // Browser back / reload / tab-close — fire a soft beforeunload
-    // prompt so the user doesn't accidentally bail mid-session. The
-    // browser's own dialog shows ("Leave site? Changes you made may
-    // not be saved") — we can't customize the wording, but it's
-    // enough to catch the slip. Modern browsers ignore the string.
-    window.addEventListener("beforeunload", onPracticeBeforeUnload);
+    // Note: we deliberately do NOT install a beforeunload handler in
+    // practice mode — those trigger the browser's native "Leave site?"
+    // dialog which looks ugly and doesn't match the in-app modal.
+    // The topbar/sign-out interceptors above cover the common case;
+    // browser back / reload / tab-close just navigate without warning
+    // (progress is already saved via savePracticeProgress on every
+    // visibility change + pagehide).
   }
 
   function practiceHasInProgressWork() {
@@ -471,16 +481,6 @@
     // Soften the Cancel label so the choice reads as Leave vs Stay.
     const cancelBtn = document.getElementById("confirmCancelBtn");
     if (cancelBtn) cancelBtn.textContent = "Stay on test";
-  }
-
-  function onPracticeBeforeUnload(e) {
-    if (testMode !== "practice") return undefined;
-    if (!practiceHasInProgressWork()) return undefined;
-    // Final flush before the page unloads (covers reload + tab close).
-    savePracticeProgress();
-    e.preventDefault();
-    e.returnValue = "Your practice test is saved — you can resume later.";
-    return e.returnValue;
   }
 
   function onExamPopState() {
@@ -626,6 +626,10 @@
     $("#resetBtn").addEventListener("click", onResetTest);
     $("#timerToggle").addEventListener("click", onTimerToggle);
     $("#timerReset").addEventListener("click", onResetTimer);
+    const qlPrev = document.getElementById("qlistPrev");
+    const qlNext = document.getElementById("qlistNext");
+    if (qlPrev) qlPrev.addEventListener("click", () => changeSidebarPage(-1));
+    if (qlNext) qlNext.addEventListener("click", () => changeSidebarPage(1));
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) renderTimer();
       else savePracticeProgress();
@@ -638,10 +642,30 @@
     installPracticeLeaveGuards();
   }
 
+  /* Sidebar pagination — keep ~15 questions per page so a 60-question
+     session fits in 4 pages with no scroll. The page containing the
+     currently-active question is always shown; navigation auto-flips
+     pages when state.index moves past the visible window. */
+  const SIDEBAR_PAGE_SIZE = 15;
+  let sidebarPage = 0;
+
+  function totalSidebarPages() {
+    return Math.max(1, Math.ceil(state.questions.length / SIDEBAR_PAGE_SIZE));
+  }
+
+  function ensureActivePageVisible() {
+    const target = Math.floor(state.index / SIDEBAR_PAGE_SIZE);
+    if (target !== sidebarPage) sidebarPage = target;
+  }
+
   function renderSidebar() {
+    ensureActivePageVisible();
     const ul = $("#qlist");
     ul.innerHTML = "";
-    state.questions.forEach((q, i) => {
+    const start = sidebarPage * SIDEBAR_PAGE_SIZE;
+    const end = Math.min(start + SIDEBAR_PAGE_SIZE, state.questions.length);
+    for (let i = start; i < end; i++) {
+      const q = state.questions[i];
       const li = document.createElement("li");
       li.dataset.index = i;
       li.classList.toggle("active", i === state.index);
@@ -674,9 +698,29 @@
           '</div>' +
           '<div class="q-text">' + escapeHtml(truncate(q.text, 60)) + '</div>' +
         '</div>';
-      li.addEventListener("click", () => goTo(i));
+      const targetIndex = i;
+      li.addEventListener("click", () => goTo(targetIndex));
       ul.appendChild(li);
-    });
+    }
+    renderSidebarPager();
+  }
+
+  function renderSidebarPager() {
+    const info = document.getElementById("qlistPageInfo");
+    const prev = document.getElementById("qlistPrev");
+    const next = document.getElementById("qlistNext");
+    const pages = totalSidebarPages();
+    if (info) info.textContent = (sidebarPage + 1) + " / " + pages;
+    if (prev) prev.disabled = sidebarPage <= 0;
+    if (next) next.disabled = sidebarPage >= pages - 1;
+  }
+
+  function changeSidebarPage(delta) {
+    const pages = totalSidebarPages();
+    const next = Math.min(pages - 1, Math.max(0, sidebarPage + delta));
+    if (next === sidebarPage) return;
+    sidebarPage = next;
+    renderSidebar();
   }
 
   function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
