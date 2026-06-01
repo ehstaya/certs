@@ -418,15 +418,18 @@ public class TestAttemptService {
 
         int totalAnswered = 0;
         int totalTagged = 0;
-        for (TestAttemptAnswer r : answerRepo.findByAttemptOrderByIdAsc(attempt)) {
+        // One JPQL projection query — (topic, isCorrect) tuples — instead
+        // of loading every TestAttemptAnswer with its EAGER Question +
+        // EAGER Choices (which was ~121 SQL statements for a 60-Q attempt
+        // and the cause of /my/reports/per-test occasionally taking ~11 s).
+        for (Object[] row : answerRepo.findTopicCorrectnessByAttempt(attempt)) {
             totalAnswered++;
-            Question q = r.getQuestion();
-            if (q == null) continue;
-            String topic = q.getTopic();
+            String topic = (String) row[0];
             if (topic == null || topic.isBlank()) continue;
+            boolean isCorrect = (Boolean) row[1];
             int[] bucket = tally.computeIfAbsent(topic, k -> new int[]{0, 0});
             bucket[1]++;
-            if (r.isCorrect()) bucket[0]++;
+            if (isCorrect) bucket[0]++;
             totalTagged++;
         }
 
