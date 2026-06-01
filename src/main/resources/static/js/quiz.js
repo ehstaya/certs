@@ -25,6 +25,148 @@
   let examSlug = null;
   let practiceCount = 60;
 
+  /* ===========================================================
+     Practice-mode persistence
+     -----------------------------------------------------------
+     Saves the current question set + per-question answer state +
+     active index to localStorage, keyed by exam slug. Lets the
+     user close the tab / navigate elsewhere / reload, then come
+     back to /?exam=<slug> and pick up exactly where they left
+     off. Practice mode ONLY — exam mode has its own lockdown
+     and each exam attempt is meant to be a fresh sit.
+     =========================================================== */
+  const PRACTICE_SAVE_KEY_PREFIX = "practice-progress-v1:";
+  // 14 days — long enough for "I came back next weekend" while
+  // still cleaning up stale state from old / abandoned sessions.
+  const PRACTICE_SAVE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+  let practiceResumed = false; // set true when init() rehydrated from save
+
+  function practiceSaveKey() {
+    return PRACTICE_SAVE_KEY_PREFIX + (examSlug || "_");
+  }
+
+  function savePracticeProgress() {
+    if (testMode !== "practice") return;
+    if (!examSlug) return;
+    if (state.finished) return;
+    if (!state.questions || state.questions.length === 0) return;
+    try {
+      const answers = [];
+      state.questions.forEach(function (q) {
+        const a = state.answers.get(q.id);
+        if (!a) return;
+        answers.push({
+          id: q.id,
+          selected: Array.from(a.selected),
+          submitted: !!a.submitted,
+          correct: !!a.correct,
+          correctChoiceIds: a.correctChoiceIds || [],
+          explanation: a.explanation || "",
+          helpUrl: a.helpUrl || "",
+          visited: !!a.visited,
+        });
+      });
+      const payload = {
+        v: 1,
+        examSlug: examSlug,
+        startedAt: state.startedAt ? state.startedAt.toISOString() : null,
+        savedAt: new Date().toISOString(),
+        index: state.index,
+        questions: state.questions, // full payload so resume works offline
+        answers: answers,
+      };
+      localStorage.setItem(practiceSaveKey(), JSON.stringify(payload));
+    } catch (e) {
+      // Quota / private mode — fail silently. Resume just won't work
+      // this session; the user can still finish + record normally.
+    }
+  }
+
+  function clearPracticeProgress() {
+    try { localStorage.removeItem(practiceSaveKey()); } catch (e) {}
+  }
+
+  function loadPracticeProgress() {
+    if (testMode !== "practice") return null;
+    if (!examSlug) return null;
+    try {
+      const raw = localStorage.getItem(practiceSaveKey());
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data || data.v !== 1 || !Array.isArray(data.questions) || data.questions.length === 0) {
+        localStorage.removeItem(practiceSaveKey());
+        return null;
+      }
+      // Expire stale saves so we don't surprise the user with a
+      // months-old half-test the next time they pick this cert.
+      if (data.savedAt) {
+        const age = Date.now() - new Date(data.savedAt).getTime();
+        if (age > PRACTICE_SAVE_MAX_AGE_MS) {
+          localStorage.removeItem(practiceSaveKey());
+          return null;
+        }
+      }
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** On resume we trust the saved question payload but still want
+   *  fresh exam metadata (duration, passing pct, branding name) so
+   *  changes the admin made since the user left flow through. One
+   *  cheap GET; swallows errors and falls back to the defaults set
+   *  at the top of this file. */
+  async function hydrateExamMetaForResume() {
+    if (!examSlug) return;
+    try {
+      const res = await fetch("/api/exams/" + encodeURIComponent(examSlug) + "/questions",
+                              { credentials: "same-origin" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const meta = data.exam || {};
+      practiceCount = meta.questionsPerSession && meta.questionsPerSession > 0 ? meta.questionsPerSession : practiceCount;
+      TOTAL_MS = (meta.durationMinutes && meta.durationMinutes > 0 ? meta.durationMinutes : 90) * 60 * 1000;
+      PASSING_PCT = (meta.passingScorePercent && meta.passingScorePercent > 0) ? meta.passingScorePercent : 65;
+      applyExamBranding(meta);
+    } catch (e) { /* keep defaults */ }
+  }
+
+  /** Tiny inline banner above the question card the first time we
+   *  restore a saved practice session. Tells the user "yes I picked
+   *  up where you left off" so it isn't surprising, with a quick
+   *  link to start over. */
+  function showPracticeResumedBanner(savedAtIso) {
+    const host = document.querySelector(".main-body");
+    if (!host) return;
+    if (document.getElementById("practiceResumedBanner")) return;
+    const div = document.createElement("div");
+    div.id = "practiceResumedBanner";
+    div.setAttribute("role", "status");
+    div.style.cssText =
+      "background:#eaf5fe; border:1px solid #bfdbfe; color:#1e3a8a;" +
+      "padding:8px 12px; border-radius:8px; margin:0 0 12px;" +
+      "display:flex; align-items:center; gap:8px; font-size:13px;";
+    let whenLabel = "";
+    try {
+      if (savedAtIso) {
+        const d = new Date(savedAtIso);
+        whenLabel = " from " + d.toLocaleString();
+      }
+    } catch (e) {}
+    div.innerHTML =
+      '<span aria-hidden="true">↩</span>' +
+      '<span style="flex:1;">Resumed your saved practice' + escapeHtml(whenLabel) + '. Pick up right where you left off.</span>' +
+      '<button type="button" id="practiceResumedDismiss" class="btn btn-link" style="padding:0; font-size:13px;">Dismiss</button>';
+    host.insertBefore(div, host.firstChild);
+    const dismiss = document.getElementById("practiceResumedDismiss");
+    if (dismiss) {
+      dismiss.addEventListener("click", function () {
+        if (div.parentNode) div.parentNode.removeChild(div);
+      });
+    }
+  }
+
   // Delivery mode for this session: "practice" (default) or "exam".
   //   practice — feedback after every submit, can navigate / skip / retest.
   //   exam     — no feedback until Finish, no skipping, no going back,
@@ -82,6 +224,55 @@
     testMode = modeParam === "exam" ? "exam" : "practice";
     if (!examSlug && !retakeId) { window.location.href = "/exams.html"; return; }
     await loadCurrentUser();
+
+    // Practice-mode resume: if a saved in-progress practice exists for
+    // this exam (and the user didn't explicitly request a retake), pick
+    // it up here instead of hitting the API for a fresh random sample.
+    // The saved payload includes the exact question set + per-question
+    // answer state + active index, so the resumed session is byte-for-byte
+    // the one the user left.
+    const savedProgress = retakeId ? null : loadPracticeProgress();
+    if (savedProgress) {
+      try {
+        // Re-fetch exam metadata only — we need durationMinutes, passingScorePercent,
+        // and branding. Cheap one-shot GET, no harm if it fails (we fall back to defaults).
+        await hydrateExamMetaForResume();
+        state.questions = savedProgress.questions;
+        state.questions.forEach((q) => state.answers.set(q.id, { selected: new Set(), submitted: false, correct: false, visited: false }));
+        if (Array.isArray(savedProgress.answers)) {
+          savedProgress.answers.forEach(function (sa) {
+            const target = state.answers.get(sa.id);
+            if (!target) return;
+            target.selected = new Set(sa.selected || []);
+            target.submitted = !!sa.submitted;
+            target.correct = !!sa.correct;
+            target.correctChoiceIds = sa.correctChoiceIds || [];
+            target.explanation = sa.explanation || "";
+            target.helpUrl = sa.helpUrl || "";
+            target.visited = !!sa.visited;
+          });
+        }
+        state.index = Math.min(Math.max(0, savedProgress.index || 0), state.questions.length - 1);
+        state.startedAt = savedProgress.startedAt ? new Date(savedProgress.startedAt) : new Date();
+        state.lastRecordedFinishAt = null;
+        practiceResumed = true;
+        initSidebarWidth();
+        renderSidebar();
+        renderQuestion();
+        bindActions();
+        initResizer();
+        initTimer();
+        applyExamModeUiLockdown(); // no-op in practice
+        showPracticeResumedBanner(savedProgress.savedAt);
+        document.body.classList.remove("quiz-booting");
+        return;
+      } catch (e) {
+        // Resume hit an unexpected snag — wipe the save and fall through
+        // to a fresh sample so the user isn't stuck.
+        clearPracticeProgress();
+      }
+    }
+
     try {
       // Two load paths: ?retake=<id> pulls the exact question set saved
       // on that previous attempt; otherwise normal random sample for the
@@ -191,6 +382,105 @@
     document.body.classList.remove("exam-mode-active");
     window.removeEventListener("popstate", onExamPopState);
     window.removeEventListener("beforeunload", onExamBeforeUnload);
+  }
+
+  /* ===========================================================
+     Practice-mode leave warning
+     -----------------------------------------------------------
+     Softer counterpart to the exam-mode nav lockdown above. Any
+     topbar nav (Exams / My reports / Add questions / Change
+     password / Sign out) gets intercepted while a practice test
+     is in progress. We show the existing confirm modal with copy
+     reassuring the user their progress is saved and they can
+     resume — then either let the navigation proceed or cancel it.
+     Intra-quiz controls (Submit, Next, Back, sidebar question
+     jumps, Finish) are NOT touched here. Exam mode is excluded
+     because it already has its own stricter lockdown.
+     =========================================================== */
+  let practiceLeaveGuardsInstalled = false;
+  function installPracticeLeaveGuards() {
+    if (practiceLeaveGuardsInstalled) return;
+    if (testMode !== "practice") return;
+    practiceLeaveGuardsInstalled = true;
+
+    // Topbar links — every <a class="topbar-link"> that points
+    // somewhere off the quiz page.
+    document.querySelectorAll(".topbar .topbar-link").forEach(function (el) {
+      if (el.tagName !== "A") return;
+      el.addEventListener("click", function (e) {
+        if (!practiceHasInProgressWork()) return;
+        const target = el.getAttribute("href");
+        if (!target) return;
+        e.preventDefault();
+        promptLeavePracticeTest(function () {
+          // Confirmed leave — last flush, then navigate.
+          savePracticeProgress();
+          window.location.href = target;
+        });
+      });
+    });
+
+    // Sign-out form — interceptor on the form submit so the POST
+    // doesn't fire until the user confirms. We can't just hook the
+    // button click because the form may also be submitted via Enter.
+    const logoutForm = document.querySelector('.topbar form[action="/logout"]');
+    if (logoutForm) {
+      logoutForm.addEventListener("submit", function (e) {
+        if (!practiceHasInProgressWork()) return;
+        e.preventDefault();
+        promptLeavePracticeTest(function () {
+          savePracticeProgress();
+          logoutForm.submit();
+        });
+      });
+    }
+
+    // Browser back / reload / tab-close — fire a soft beforeunload
+    // prompt so the user doesn't accidentally bail mid-session. The
+    // browser's own dialog shows ("Leave site? Changes you made may
+    // not be saved") — we can't customize the wording, but it's
+    // enough to catch the slip. Modern browsers ignore the string.
+    window.addEventListener("beforeunload", onPracticeBeforeUnload);
+  }
+
+  function practiceHasInProgressWork() {
+    if (testMode !== "practice") return false;
+    if (state.finished) return false;
+    if (!state.questions || state.questions.length === 0) return false;
+    // "In progress" = at least one question has been answered OR the
+    // user has navigated beyond Q1. Otherwise leaving costs nothing.
+    if (state.index > 0) return true;
+    let any = false;
+    state.answers.forEach(function (a) { if (a && (a.submitted || a.selected.size > 0)) any = true; });
+    return any;
+  }
+
+  function promptLeavePracticeTest(onLeaveConfirmed) {
+    showConfirmPanel({
+      title: "Leave the practice test?",
+      body: "Your practice test is saved at this state — you can come back to "
+            + "this exam and pick up exactly where you left off. Are you sure "
+            + "you want to leave?",
+      confirmLabel: "Leave practice test",
+      onConfirm: function () {
+        hideConfirmPanel();
+        if (typeof onLeaveConfirmed === "function") onLeaveConfirmed();
+      },
+      onCancel: function () { /* stay — no action needed */ },
+    });
+    // Soften the Cancel label so the choice reads as Leave vs Stay.
+    const cancelBtn = document.getElementById("confirmCancelBtn");
+    if (cancelBtn) cancelBtn.textContent = "Stay on test";
+  }
+
+  function onPracticeBeforeUnload(e) {
+    if (testMode !== "practice") return undefined;
+    if (!practiceHasInProgressWork()) return undefined;
+    // Final flush before the page unloads (covers reload + tab close).
+    savePracticeProgress();
+    e.preventDefault();
+    e.returnValue = "Your practice test is saved — you can resume later.";
+    return e.returnValue;
   }
 
   function onExamPopState() {
@@ -336,7 +626,16 @@
     $("#resetBtn").addEventListener("click", onResetTest);
     $("#timerToggle").addEventListener("click", onTimerToggle);
     $("#timerReset").addEventListener("click", onResetTimer);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) renderTimer(); });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) renderTimer();
+      else savePracticeProgress();
+    });
+    // pagehide fires on tab close + bfcache eviction; final flush
+    // so we never lose the last navigation/answer.
+    window.addEventListener("pagehide", savePracticeProgress);
+    // Practice-mode soft leave warning — see installPracticeLeaveGuards
+    // for what gets intercepted and why exam mode is excluded.
+    installPracticeLeaveGuards();
   }
 
   function renderSidebar() {
@@ -772,6 +1071,7 @@
       ans.helpUrl = data.helpUrl;
       renderSidebar();
       renderQuestion();
+      savePracticeProgress();
       // EXAM mode: auto-advance after a successful submit. On the last
       // question this opens the Finish confirm (data-role drives it).
       // Small delay lets the submission visually register before the
@@ -833,6 +1133,7 @@
     state.index = i;
     renderQuestion();
     renderSidebar();
+    savePracticeProgress();
     document.querySelector(".main-body").scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -987,6 +1288,10 @@
         // redirect doesn't trip the beforeunload trap. Practice mode
         // never sets the lock so this is a no-op there.
         releaseExamNavigationLock();
+        // The saved practice progress is no longer useful — the
+        // attempt is recorded server-side and a fresh /?exam=
+        // launch should start clean.
+        clearPracticeProgress();
         const slug = examSlug ? "?exam=" + encodeURIComponent(examSlug) : "";
         window.location.href = "/my/reports/per-test" + slug;
       });
@@ -1473,6 +1778,10 @@
   }
 
   function doResetTest() {
+    // The saved practice progress belongs to the OLD shuffled set —
+    // wipe it before reshuffling so the user doesn't get auto-resumed
+    // back into a session they explicitly reset.
+    clearPracticeProgress();
     shuffleInPlace(state.questions);
     state.questions.forEach((q, i) => {
       q.number = i + 1;
