@@ -75,21 +75,36 @@ public class QuizService {
 
     /** Returns a topic-weighted random sample sized to {@code exam.questionsPerSession}.
      *  Falls back to a uniform random sample if topics aren't defined or no questions
-     *  are tagged yet. PENDING/REJECTED questions are never served. */
+     *  are tagged yet. PENDING/REJECTED questions are never served.
+     *
+     *  Two-stage fetch: a lightweight (id, topic) projection drives the
+     *  sampling, then we load the full Question + EAGER Choices only for
+     *  the ~60 selected IDs. Previous design loaded the entire approved
+     *  bank with its choices via a JOIN producing ~2000 rows for the
+     *  Salesforce Admin 400-question case — the dominant cost of starting
+     *  a practice session. */
     public List<QuestionDto> listForExam(String examSlug) {
         Exam exam = exams.findBySlug(examSlug).orElse(null);
         if (exam == null) return List.of();
         int sessionSize = Math.max(1, exam.getQuestionsPerSession());
 
-        List<Question> approved = repo.findByExamSlugAndStatusOrderByNumber(examSlug, Question.Status.APPROVED);
-        if (approved.isEmpty()) return List.of();
+        // Stage 1: lightweight (id, topic) tuples — drives the sampler
+        // without loading question text / choices for the full bank.
+        List<Object[]> idTopicRows = repo.findIdAndTopicForSampling(examSlug, Question.Status.APPROVED);
+        if (idTopicRows.isEmpty()) return List.of();
 
         List<ExamTopic> topics = examTopics.findByExamOrderBySortOrderAscIdAsc(exam);
-        List<Question> sampled = topics.isEmpty()
-                ? uniformSample(approved, sessionSize)
-                : weightedSample(approved, topics, sessionSize);
+        List<Long> selectedIds = topics.isEmpty()
+                ? uniformSampleIds(idTopicRows, sessionSize)
+                : weightedSampleIds(idTopicRows, topics, sessionSize);
+        if (selectedIds.isEmpty()) return List.of();
 
-        // Final shuffle so topics aren't presented in clusters.
+        // Stage 2: load the full entities (with EAGER choices) for just
+        // the 60 sampled IDs. JpaRepository.findAllById issues a single
+        // IN-list SELECT.
+        List<Question> sampled = repo.findAllById(selectedIds);
+        // findAllById doesn't preserve input order — re-shuffle so topics
+        // aren't clustered (was the original "Final shuffle" step).
         Collections.shuffle(sampled);
 
         // Build one name-substitution map for the whole session so the same
@@ -100,52 +115,55 @@ public class QuizService {
                 .collect(Collectors.toList());
     }
 
-    private List<Question> uniformSample(List<Question> pool, int n) {
-        List<Question> shuffled = new ArrayList<>(pool);
-        Collections.shuffle(shuffled);
-        return shuffled.subList(0, Math.min(n, shuffled.size()));
+    private List<Long> uniformSampleIds(List<Object[]> idTopicRows, int n) {
+        List<Long> ids = new ArrayList<>(idTopicRows.size());
+        for (Object[] row : idTopicRows) ids.add((Long) row[0]);
+        Collections.shuffle(ids);
+        return ids.subList(0, Math.min(n, ids.size()));
     }
 
-    private List<Question> weightedSample(List<Question> approved, List<ExamTopic> topics, int sessionSize) {
-        // Bucket approved questions by their topic key.
-        Map<String, List<Question>> byTopic = new HashMap<>();
-        for (Question q : approved) {
-            String key = q.getTopic();
+    private List<Long> weightedSampleIds(List<Object[]> idTopicRows,
+                                         List<ExamTopic> topics, int sessionSize) {
+        // Bucket approved-question ids by their topic key.
+        Map<String, List<Long>> byTopic = new HashMap<>();
+        List<Long> allIds = new ArrayList<>(idTopicRows.size());
+        for (Object[] row : idTopicRows) {
+            Long id = (Long) row[0];
+            String key = (String) row[1];
+            allIds.add(id);
             if (key == null || key.isBlank()) continue;
-            byTopic.computeIfAbsent(key, k -> new ArrayList<>()).add(q);
+            byTopic.computeIfAbsent(key, k -> new ArrayList<>()).add(id);
         }
 
-        // First pass: take ~floor(weight% * sessionSize) per topic.
-        LinkedHashSet<Question> picked = new LinkedHashSet<>();
+        LinkedHashSet<Long> picked = new LinkedHashSet<>();
         int totalWeight = topics.stream().mapToInt(ExamTopic::getWeightPercent).sum();
         if (totalWeight <= 0) totalWeight = 100;
 
         for (ExamTopic t : topics) {
             int target = (int) Math.round(sessionSize * (t.getWeightPercent() / (double) totalWeight));
-            List<Question> bucket = byTopic.getOrDefault(t.getTopicKey(), List.of());
+            List<Long> bucket = byTopic.getOrDefault(t.getTopicKey(), List.of());
             if (bucket.isEmpty()) continue;
-            List<Question> shuffled = new ArrayList<>(bucket);
+            List<Long> shuffled = new ArrayList<>(bucket);
             Collections.shuffle(shuffled);
             for (int i = 0; i < Math.min(target, shuffled.size()); i++) {
                 picked.add(shuffled.get(i));
             }
         }
 
-        // Second pass: if under-shot (e.g. a topic has too few questions, or many
-        // are still untagged), fill remaining slots from anything not yet picked.
+        // Top-up from any unpicked id when topic weights under-shoot.
         if (picked.size() < sessionSize) {
-            List<Question> remainder = new ArrayList<>();
-            for (Question q : approved) if (!picked.contains(q)) remainder.add(q);
+            List<Long> remainder = new ArrayList<>();
+            for (Long id : allIds) if (!picked.contains(id)) remainder.add(id);
             Collections.shuffle(remainder);
-            for (Question q : remainder) {
+            for (Long id : remainder) {
                 if (picked.size() >= sessionSize) break;
-                picked.add(q);
+                picked.add(id);
             }
         }
 
-        log.debug("weightedSample: picked {} of {} approved (target session={})",
-                picked.size(), approved.size(), sessionSize);
-        List<Question> out = new ArrayList<>(picked);
+        log.debug("weightedSampleIds: picked {} of {} approved (target session={})",
+                picked.size(), allIds.size(), sessionSize);
+        List<Long> out = new ArrayList<>(picked);
         return out.size() > sessionSize ? out.subList(0, sessionSize) : out;
     }
 

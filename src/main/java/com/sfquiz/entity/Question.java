@@ -7,7 +7,18 @@ import java.util.List;
 
 @Entity
 @Table(name = "questions",
-        uniqueConstraints = @UniqueConstraint(name = "uk_question_exam_number", columnNames = {"exam_id", "number"}))
+        uniqueConstraints = @UniqueConstraint(name = "uk_question_exam_number", columnNames = {"exam_id", "number"}),
+        indexes = {
+            // Covers the dominant filter pattern across the app: every
+            // listing, sampling, and counting query restricts by exam + status
+            // (typically APPROVED). Without this index Postgres does a full
+            // table scan of `questions` for /api/exams/{slug}/questions,
+            // /api/exams/{slug}/topics, and the GROUP BY in /api/exams.
+            @Index(name = "idx_question_exam_status", columnList = "exam_id, status"),
+            // Covers the topic-auto-classifier sweep + the per-attempt
+            // breakdown's topic lookup (exam + status + topic).
+            @Index(name = "idx_question_exam_status_topic", columnList = "exam_id, status, topic")
+        })
 public class Question {
 
     public enum Type { SINGLE, MULTI }

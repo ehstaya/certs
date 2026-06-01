@@ -27,16 +27,26 @@ public class ExamService {
     }
 
     /** Topics for the info page. The per-topic question counts use the live bank
-     *  so the UI can show "you have N approved questions in this topic". */
+     *  so the UI can show "you have N approved questions in this topic".
+     *
+     *  Previously this fired one questions.findByExamAndStatusAndTopic per topic
+     *  — each of which loaded the full Question entities (with EAGER choices)
+     *  just to call .size(). On Salesforce Admin (~400 approved questions,
+     *  8 topics) that was 8 heavy queries → ~2 s per topics-info hit. Now
+     *  it's two queries: the topic list + one GROUP BY for counts. */
     public List<ExamTopicDto> listTopics(String slug) {
         Exam exam = exams.findBySlug(slug).orElse(null);
         if (exam == null) return List.of();
         List<ExamTopic> topics = examTopics.findByExamOrderBySortOrderAscIdAsc(exam);
         int perSession = Math.max(1, exam.getQuestionsPerSession());
+        java.util.Map<String, Long> approvedByTopic = new java.util.HashMap<>();
+        for (Object[] row : questions.countByExamAndStatusGroupedByTopic(exam, Question.Status.APPROVED)) {
+            approvedByTopic.put((String) row[0], ((Number) row[1]).longValue());
+        }
         List<ExamTopicDto> out = new ArrayList<>(topics.size());
         for (ExamTopic t : topics) {
             int forSession = (int) Math.round(perSession * (t.getWeightPercent() / 100.0));
-            long approved = questions.findByExamAndStatusAndTopic(exam, Question.Status.APPROVED, t.getTopicKey()).size();
+            long approved = approvedByTopic.getOrDefault(t.getTopicKey(), 0L);
             out.add(new ExamTopicDto(
                     t.getTopicKey(), t.getName(), t.getWeightPercent(),
                     forSession, approved, approved));

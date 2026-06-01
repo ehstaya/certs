@@ -55,6 +55,25 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
     @Query("UPDATE Question q SET q.topic = :topic WHERE q.id = :id")
     int updateTopic(@Param("id") Long id, @Param("topic") String topic);
 
+    /** Per-topic counts in one GROUP BY — used by ExamService.listTopics so
+     *  the topic-info panel doesn't fire one heavy COUNT-via-load-all-entities
+     *  query per topic (the N+1 that was costing /api/exams/{slug}/topics
+     *  ~2 s on Salesforce Admin's 400-question bank). */
+    @Query("SELECT q.topic, COUNT(q) FROM Question q " +
+           "WHERE q.exam = :exam AND q.status = :status AND q.topic IS NOT NULL " +
+           "GROUP BY q.topic")
+    List<Object[]> countByExamAndStatusGroupedByTopic(
+            @Param("exam") Exam exam, @Param("status") Question.Status status);
+
+    /** Lightweight (id, topic) tuples for the topic-weighted sampler in
+     *  QuizService.listForExam. Avoids loading every approved question's
+     *  full entity + EAGER choices just to bucket by topic and pick 60.
+     *  Returns Object[] {Long id, String topic}. */
+    @Query("SELECT q.id, q.topic FROM Question q " +
+           "WHERE q.exam.slug = :slug AND q.status = :status")
+    List<Object[]> findIdAndTopicForSampling(
+            @Param("slug") String slug, @Param("status") Question.Status status);
+
     Optional<Question> findFirstByExamOrderByNumberDesc(Exam exam);
 
     boolean existsByExamAndText(Exam exam, String text);
