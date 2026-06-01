@@ -46,6 +46,15 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
            "GROUP BY q.exam.id")
     List<Object[]> countApprovedByExam();
 
+    /** Targeted single-column write used by the topic classifier batch.
+     *  Each call runs in its own short auto-transaction (Spring Data's
+     *  default for @Modifying), so a long backfill never holds one
+     *  connection while making 200+ Claude API calls — and user submits
+     *  no longer queue up on a saturated pool. */
+    @Modifying
+    @Query("UPDATE Question q SET q.topic = :topic WHERE q.id = :id")
+    int updateTopic(@Param("id") Long id, @Param("topic") String topic);
+
     Optional<Question> findFirstByExamOrderByNumberDesc(Exam exam);
 
     boolean existsByExamAndText(Exam exam, String text);

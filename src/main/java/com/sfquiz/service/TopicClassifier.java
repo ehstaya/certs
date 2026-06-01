@@ -15,7 +15,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,8 +61,20 @@ public class TopicClassifier {
     public record BatchResult(int classified, int skipped, int failed, String message) {}
 
     /** Classify every untagged APPROVED question for the given exam. Stops early
-     *  if the daily Anthropic budget is exhausted; safe to re-run later. */
-    @Transactional
+     *  if the daily Anthropic budget is exhausted; safe to re-run later.
+     *
+     *  Critical: this method is NOT transactional. The previous design
+     *  wrapped the whole batch in one @Transactional, holding a single DB
+     *  connection across 200+ Claude calls (~2 s each) — and every
+     *  questions.save() left a dirty entity in the Hibernate session, so
+     *  each subsequent operation got more expensive. Concurrent user
+     *  submits queued up waiting for the pool, producing the 8-23 s
+     *  service times seen in router logs.
+     *
+     *  Now: each repo call (the initial untagged read, the per-question
+     *  findById, the targeted updateTopic) runs in its own short auto-
+     *  transaction. The Claude roundtrip in between holds nothing. The
+     *  connection is back in the pool well under a second per question. */
     public BatchResult classifyUntaggedFor(String examSlug) {
         Exam exam = exams.findBySlug(examSlug).orElse(null);
         if (exam == null) return new BatchResult(0, 0, 0, "Exam '" + examSlug + "' not found");
@@ -75,35 +86,44 @@ public class TopicClassifier {
             return new BatchResult(0, 0, 0, "ANTHROPIC_API_KEY is not set on this dyno");
         }
 
-        List<Question> untagged = questions.findByExamAndStatusAndTopicIsNull(exam, Question.Status.APPROVED);
-        if (untagged.isEmpty()) {
+        List<Long> untaggedIds = questions
+                .findByExamAndStatusAndTopicIsNull(exam, Question.Status.APPROVED)
+                .stream().map(Question::getId).collect(Collectors.toList());
+        if (untaggedIds.isEmpty()) {
             return new BatchResult(0, 0, 0, "All approved questions already have a topic");
         }
 
         String system = buildSystemPrompt(topics);
         int classified = 0, skipped = 0, failed = 0;
-        for (Question q : untagged) {
+        for (Long qid : untaggedIds) {
             if (costs.budgetExhausted()) {
                 return new BatchResult(classified, skipped, failed,
                         "Daily Anthropic budget exhausted after " + classified +
-                        " of " + untagged.size() + " — re-run after UTC midnight");
+                        " of " + untaggedIds.size() + " — re-run after UTC midnight");
             }
             try {
+                // Load happens in its own short txn (auto from JpaRepository).
+                // Question.choices is EAGER so the choices collection is
+                // initialized before the session closes — classifyOne can
+                // safely read it on the detached entity.
+                Question q = questions.findById(qid).orElse(null);
+                if (q == null) { skipped++; continue; }
                 String key = classifyOne(q, topics, system);
                 if (key == null) {
                     failed++;
                 } else {
-                    q.setTopic(key);
-                    questions.save(q);
+                    // Targeted UPDATE — single row, single short txn, no
+                    // dirty-entity accumulation in any session.
+                    questions.updateTopic(qid, key);
                     classified++;
                 }
             } catch (Exception ex) {
-                log.warn("classify failed for question id={}: {}", q.getId(), ex.getMessage());
+                log.warn("classify failed for question id={}: {}", qid, ex.getMessage());
                 failed++;
             }
         }
         return new BatchResult(classified, skipped, failed,
-                "Classified " + classified + " of " + untagged.size() +
+                "Classified " + classified + " of " + untaggedIds.size() +
                 (failed > 0 ? " (" + failed + " failed)" : ""));
     }
 

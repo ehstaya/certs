@@ -1119,7 +1119,13 @@
     }
   }
 
+  // Guards against double-submission. A click while a request is in
+  // flight is a no-op — the previous code happily fired N parallel
+  // POSTs, all of which then queued on the DB pool and made the
+  // perceived latency much worse.
+  let submitInFlight = false;
   async function onSubmit() {
+    if (submitInFlight) return;
     if (timer.state === "expired") {
       showTransientWarning("Time's up — the test is locked.");
       return;
@@ -1129,6 +1135,13 @@
     if (ans.selected.size === 0) {
       showTransientWarning("Please select an answer first.");
       return;
+    }
+    const submitBtn = $("#submitBtn");
+    submitInFlight = true;
+    const originalLabel = submitBtn ? submitBtn.textContent : null;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Submitting…";
     }
     try {
       const res = await fetch("/api/questions/" + q.id + "/submit", {
@@ -1155,6 +1168,15 @@
       }
     } catch (e) {
       showTransientWarning("Could not submit: " + e.message);
+      // Restore button label on failure so the user can retry. On
+      // success renderQuestion() rebuilds the action bar with the
+      // correct post-submit state.
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        if (originalLabel) submitBtn.textContent = originalLabel;
+      }
+    } finally {
+      submitInFlight = false;
     }
   }
 
