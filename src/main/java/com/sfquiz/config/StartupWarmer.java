@@ -1,9 +1,13 @@
 package com.sfquiz.config;
 
 import com.sfquiz.entity.Exam;
+import com.sfquiz.entity.Question;
+import com.sfquiz.entity.User;
 import com.sfquiz.repository.ExamRepository;
+import com.sfquiz.repository.ExamTopicRepository;
 import com.sfquiz.repository.QuestionRepository;
 import com.sfquiz.repository.TestAttemptRepository;
+import com.sfquiz.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -37,12 +41,17 @@ public class StartupWarmer {
     private final ExamRepository exams;
     private final QuestionRepository questions;
     private final TestAttemptRepository attempts;
+    private final UserRepository users;
+    private final ExamTopicRepository examTopics;
 
     public StartupWarmer(ExamRepository exams, QuestionRepository questions,
-                         TestAttemptRepository attempts) {
+                         TestAttemptRepository attempts,
+                         UserRepository users, ExamTopicRepository examTopics) {
         this.exams = exams;
         this.questions = questions;
         this.attempts = attempts;
+        this.users = users;
+        this.examTopics = examTopics;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -51,16 +60,34 @@ public class StartupWarmer {
     public void warmUp() {
         long t0 = System.currentTimeMillis();
         try {
-            // Same queries the topbar /api/exams hits on every page load —
-            // priming them gets the connection + plan cache hot before a
-            // real user lands.
+            // /api/exams + topbar dropdown
             List<Exam> activeExams = exams.findByActiveTrueOrderBySortOrderAscNameAsc();
             questions.countApprovedByExam();
-            // Cheap touch of the attempt table so the user-reports landing
-            // page's first query is warm too.
             attempts.count();
-            log.info("StartupWarmer: warmed {} exam(s), question counts, attempt count in {} ms",
-                    activeExams.size(), System.currentTimeMillis() - t0);
+
+            // Pick a real user + exam if we have them so the per-user JPQL
+            // queries below have actual params to plan against. If neither
+            // exists this is a brand-new dyno; skip silently.
+            User sampleUser = users.findAll().stream().findFirst().orElse(null);
+            Exam sampleExam = activeExams.isEmpty() ? null : activeExams.get(0);
+
+            if (sampleUser != null && sampleExam != null) {
+                // /my/reports/per-test + /my/reports/trend hit this on the
+                // default-exam path. Plan caches by JPQL string, so even
+                // running it once with a user who has no rows warms the
+                // plan for everyone else.
+                attempts.findByUserAndExamOrderByFinishedAtAsc(sampleUser, sampleExam);
+                // /my/reports dashboard's GROUP BY (per-exam summary for one user).
+                attempts.summaryByExamForUser(sampleUser);
+                // Topic-info panel + per-attempt breakdown read these on
+                // every per-test render.
+                examTopics.findByExamOrderBySortOrderAscIdAsc(sampleExam);
+                questions.countByExamAndStatusGroupedByTopic(sampleExam, Question.Status.APPROVED);
+                questions.findIdAndTopicForSampling(sampleExam.getSlug(), Question.Status.APPROVED);
+            }
+
+            log.info("StartupWarmer: warmed core + user-report query plans in {} ms ({} exam(s))",
+                    System.currentTimeMillis() - t0, activeExams.size());
         } catch (Exception ex) {
             // Best-effort — a warmup failure should never block the dyno.
             log.warn("StartupWarmer: skipped after {} ms: {}",
