@@ -630,6 +630,13 @@
     const qlNext = document.getElementById("qlistNext");
     if (qlPrev) qlPrev.addEventListener("click", () => changeSidebarPage(-1));
     if (qlNext) qlNext.addEventListener("click", () => changeSidebarPage(1));
+    // Resize re-renders the sidebar so the page size adapts to the
+    // new viewport height (shorter viewport -> fewer rows per page).
+    let resizeTimer = null;
+    window.addEventListener("resize", () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => renderSidebar(), 120);
+    });
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) renderTimer();
       else savePracticeProgress();
@@ -642,28 +649,47 @@
     installPracticeLeaveGuards();
   }
 
-  /* Sidebar pagination — keep ~15 questions per page so a 60-question
-     session fits in 4 pages with no scroll. The page containing the
-     currently-active question is always shown; navigation auto-flips
-     pages when state.index moves past the visible window. */
-  const SIDEBAR_PAGE_SIZE = 15;
+  /* Sidebar pagination — page size adapts to the visible sidebar
+     height so the rows always fill the viewport before the pager
+     kicks in. Pager hides entirely when every question fits on one
+     page (small banks). Recomputed on window/sidebar resize. */
+  const SIDEBAR_PAGE_MIN = 5;          // floor when sidebar is tiny
+  const SIDEBAR_ROW_HEIGHT_PX = 72;    // measured average row height
   let sidebarPage = 0;
+  let sidebarPageSize = 15;            // updated by recomputeSidebarPageSize()
+
+  function recomputeSidebarPageSize() {
+    const sidebar = document.getElementById("sidebar");
+    if (!sidebar) return;
+    const header = sidebar.querySelector(".sidebar-header");
+    const pager  = document.getElementById("qlistPager");
+    const sidebarH = sidebar.clientHeight;
+    const headerH  = header ? header.offsetHeight : 0;
+    const pagerH   = (pager && pager.style.display !== "none") ? pager.offsetHeight : 36;
+    const avail    = sidebarH - headerH - pagerH - 8;
+    const fits     = Math.max(SIDEBAR_PAGE_MIN, Math.floor(avail / SIDEBAR_ROW_HEIGHT_PX));
+    // If everything fits on a single page, set page size to the total
+    // so the pager hides; otherwise use the computed fit.
+    const total = state.questions.length || 1;
+    sidebarPageSize = (fits >= total) ? total : fits;
+  }
 
   function totalSidebarPages() {
-    return Math.max(1, Math.ceil(state.questions.length / SIDEBAR_PAGE_SIZE));
+    return Math.max(1, Math.ceil(state.questions.length / sidebarPageSize));
   }
 
   function ensureActivePageVisible() {
-    const target = Math.floor(state.index / SIDEBAR_PAGE_SIZE);
+    const target = Math.floor(state.index / sidebarPageSize);
     if (target !== sidebarPage) sidebarPage = target;
   }
 
   function renderSidebar() {
+    recomputeSidebarPageSize();
     ensureActivePageVisible();
     const ul = $("#qlist");
     ul.innerHTML = "";
-    const start = sidebarPage * SIDEBAR_PAGE_SIZE;
-    const end = Math.min(start + SIDEBAR_PAGE_SIZE, state.questions.length);
+    const start = sidebarPage * sidebarPageSize;
+    const end = Math.min(start + sidebarPageSize, state.questions.length);
     for (let i = start; i < end; i++) {
       const q = state.questions[i];
       const li = document.createElement("li");
@@ -706,10 +732,14 @@
   }
 
   function renderSidebarPager() {
+    const pager = document.getElementById("qlistPager");
     const info = document.getElementById("qlistPageInfo");
     const prev = document.getElementById("qlistPrev");
     const next = document.getElementById("qlistNext");
     const pages = totalSidebarPages();
+    // Hide the pager when every question fits on one page — no need
+    // for noise on small banks (e.g. a 12-question short test).
+    if (pager) pager.style.display = pages <= 1 ? "none" : "";
     if (info) info.textContent = (sidebarPage + 1) + " / " + pages;
     if (prev) prev.disabled = sidebarPage <= 0;
     if (next) next.disabled = sidebarPage >= pages - 1;
