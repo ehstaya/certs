@@ -150,42 +150,45 @@
         <span th:text="${topicBreakdown.totalAnswered}">0</span> answered questions that have an area assigned.
       </p>
 
-      <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 16px; align-items: start;">
-        <!-- Best area — single card on the left. -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch;">
+        <!-- Best area — green-tinted card on the left. -->
         <div th:if="${topicBreakdown.best != null}"
-             style="padding: 12px 14px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px;">
+             style="padding: 14px 16px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; display:flex; flex-direction:column;">
           <div style="font-size: 11px; font-weight: 600; color: #047857; text-transform: uppercase; letter-spacing: 0.5px;">🌟 Strongest area</div>
-          <div style="font-size: 16px; font-weight: 600; color: var(--brand-navy,#032D60); margin-top: 4px;"
+          <div style="font-size: 16px; font-weight: 600; color: var(--brand-navy,#032D60); margin-top: 10px;"
                th:text="${topicBreakdown.best.name}">Area name</div>
-          <div style="font-size: 28px; font-weight: 700; color: #047857; line-height: 1.1; margin-top: 6px;"
-               th:text="${topicBreakdown.best.accuracyPercent + '%'}">0%</div>
-          <div class="muted" style="font-size: 12px; margin-top: 2px;">
-            <span th:text="${topicBreakdown.best.correct}">0</span> /
-            <span th:text="${topicBreakdown.best.total}">0</span> correct
+          <div style="height: 6px; background:#d1fae5; border-radius:999px; margin-top: 8px; overflow:hidden;">
+            <div th:style="|width: ${topicBreakdown.best.accuracyPercent}%; height: 100%; background:#059669;|"></div>
+          </div>
+          <div style="display:flex; align-items:baseline; justify-content:space-between; margin-top: 10px;">
+            <span style="font-size: 28px; font-weight: 700; color: #047857; line-height: 1.1;"
+                  th:text="${topicBreakdown.best.accuracyPercent + '%'}">0%</span>
+            <span class="muted" style="font-size: 12px;">
+              <span th:text="${topicBreakdown.best.correct}">0</span> /
+              <span th:text="${topicBreakdown.best.total}">0</span> correct
+            </span>
           </div>
         </div>
 
-        <!-- Worst 3 areas — stacked list on the right with a thin bar
-             showing accuracy. -->
-        <div>
-          <div style="font-size: 11px; font-weight: 600; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">⚠ Focus next — weakest areas</div>
-          <div th:if="${#lists.isEmpty(topicBreakdown.worst)}" class="muted" style="font-size: 13px;">Not enough data this attempt.</div>
-          <div th:each="t : ${topicBreakdown.worst}"
-               style="display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--gray-100,#f3f4f6);">
-            <div style="flex: 1; min-width: 0;">
-              <div style="font-weight: 600; color: var(--gray-900,#111827); font-size: 14px;"
-                   th:text="${t.name}">Area name</div>
-              <div style="height: 6px; background:#fee2e2; border-radius:999px; margin-top: 4px; overflow: hidden;">
-                <div th:style="|width: ${t.accuracyPercent}%; height: 100%; background:#dc2626;|"></div>
-              </div>
+        <!-- Worst 3 areas — red-tinted card on the right, same chrome,
+             but contains a stacked list (one row per weak area). -->
+        <div style="padding: 14px 16px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; display:flex; flex-direction:column;">
+          <div style="font-size: 11px; font-weight: 600; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px;">⚠ Focus next — weakest areas</div>
+          <div th:if="${#lists.isEmpty(topicBreakdown.worst)}" class="muted" style="font-size: 13px; margin-top: 10px;">Not enough data this attempt.</div>
+          <div th:each="t,iter : ${topicBreakdown.worst}"
+               th:style="|margin-top: ${iter.first ? 10 : 12}px;|">
+            <div style="font-size: 14px; font-weight: 600; color: var(--brand-navy,#032D60);"
+                 th:text="${t.name}">Area name</div>
+            <div style="height: 6px; background:#fee2e2; border-radius:999px; margin-top: 8px; overflow:hidden;">
+              <div th:style="|width: ${t.accuracyPercent}%; height: 100%; background:#dc2626;|"></div>
             </div>
-            <div style="text-align: right; min-width: 90px;">
-              <div style="font-size: 18px; font-weight: 700; color: #b91c1c;"
-                   th:text="${t.accuracyPercent + '%'}">0%</div>
-              <div class="muted" style="font-size: 11px;">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; margin-top: 6px;">
+              <span style="font-size: 18px; font-weight: 700; color: #b91c1c; line-height: 1.1;"
+                    th:text="${t.accuracyPercent + '%'}">0%</span>
+              <span class="muted" style="font-size: 12px;">
                 <span th:text="${t.correct}">0</span> /
                 <span th:text="${t.total}">0</span> correct
-              </div>
+              </span>
             </div>
           </div>
         </div>
