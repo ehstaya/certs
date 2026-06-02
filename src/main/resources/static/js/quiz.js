@@ -483,6 +483,135 @@
     if (cancelBtn) cancelBtn.textContent = "Stay on test";
   }
 
+  /* ===========================================================
+     Idle auto-pause (practice mode)
+     -----------------------------------------------------------
+     After IDLE_TIMEOUT_MS of no mouse / keyboard / touch /
+     scroll activity, save the test state and show a friendly
+     overlay so the user can resume on demand. Practice mode
+     only — exam mode is meant to be uninterrupted.
+     =========================================================== */
+  const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  let idleTimer = null;
+  let idleOverlayShown = false;
+
+  function resetIdleTimer() {
+    if (testMode !== "practice") return;
+    if (state.finished) return;
+    if (idleOverlayShown) return; // overlay handles its own dismiss
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(onIdleFired, IDLE_TIMEOUT_MS);
+  }
+
+  function onIdleFired() {
+    if (testMode !== "practice") return;
+    if (state.finished) return;
+    if (!state.questions || state.questions.length === 0) return;
+    savePracticeProgress();
+    showIdleSavedOverlay();
+  }
+
+  function showIdleSavedOverlay() {
+    if (document.getElementById("idleSavedOverlay")) return;
+    idleOverlayShown = true;
+    const overlay = document.createElement("div");
+    overlay.id = "idleSavedOverlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.style.cssText =
+      "position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:9998;" +
+      "display:flex; align-items:center; justify-content:center; padding:20px;";
+    const card = document.createElement("div");
+    card.style.cssText =
+      "background:#fff; padding:24px 28px; border-radius:12px; max-width:440px;" +
+      "box-shadow:0 10px 40px rgba(0,0,0,0.25);";
+    card.innerHTML =
+      '<div style="font-size:28px; line-height:1; margin-bottom:8px;">⏸</div>' +
+      '<h2 style="margin:0 0 8px; font-size:18px; color:#032D60;">Your practice test is saved</h2>' +
+      '<p style="margin:0 0 18px; color:#374151; font-size:14px; line-height:1.5;">' +
+        'We paused after a few minutes of inactivity. Your progress is saved — pick up exactly where you left off whenever you\'re ready.' +
+      '</p>' +
+      '<div style="text-align:right;">' +
+        '<button type="button" id="idleResumeBtn" class="btn btn-primary">Resume test</button>' +
+      '</div>';
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    const btn = document.getElementById("idleResumeBtn");
+    if (btn) btn.addEventListener("click", dismissIdleOverlay);
+  }
+
+  function dismissIdleOverlay() {
+    const overlay = document.getElementById("idleSavedOverlay");
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    idleOverlayShown = false;
+    resetIdleTimer();
+  }
+
+  function installIdleDetection() {
+    if (testMode !== "practice") return;
+    // Reset the idle countdown on any user activity. Listeners are
+    // passive + at the document level so they don't compete with
+    // anything in the question UI.
+    ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(function (evt) {
+      document.addEventListener(evt, resetIdleTimer, { passive: true });
+    });
+    resetIdleTimer();
+  }
+
+  /* ===========================================================
+     Session-expired handler
+     -----------------------------------------------------------
+     Any quiz fetch that comes back 401 means the user's HTTP
+     session lapsed (typical: tab open across 2 h of cookie
+     lifetime). Save what's in memory and show an overlay that
+     points back to /login — on next sign-in the practice resume
+     flow rehydrates the questions + answers from localStorage.
+     =========================================================== */
+  let sessionExpiredShown = false;
+  function showSessionExpiredOverlay() {
+    if (sessionExpiredShown) return;
+    sessionExpiredShown = true;
+    savePracticeProgress();
+    const overlay = document.createElement("div");
+    overlay.id = "sessionExpiredOverlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.style.cssText =
+      "position:fixed; inset:0; background:rgba(15,23,42,0.62); z-index:9999;" +
+      "display:flex; align-items:center; justify-content:center; padding:20px;";
+    const card = document.createElement("div");
+    card.style.cssText =
+      "background:#fff; padding:24px 28px; border-radius:12px; max-width:440px;" +
+      "box-shadow:0 10px 40px rgba(0,0,0,0.25);";
+    const resumeHint = (testMode === "practice")
+      ? 'Your progress is saved — pick up exactly where you left off once you sign back in.'
+      : 'Your in-progress answers were saved locally where possible.';
+    const targetUrl = (examSlug ? ("/?exam=" + encodeURIComponent(examSlug)) : "/");
+    card.innerHTML =
+      '<div style="font-size:28px; line-height:1; margin-bottom:8px;">🔒</div>' +
+      '<h2 style="margin:0 0 8px; font-size:18px; color:#032D60;">Your session expired</h2>' +
+      '<p style="margin:0 0 18px; color:#374151; font-size:14px; line-height:1.5;">' +
+        resumeHint +
+      '</p>' +
+      '<div style="text-align:right;">' +
+        '<a href="/login?next=' + encodeURIComponent(targetUrl) + '" class="btn btn-primary">Sign in to resume</a>' +
+      '</div>';
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
+  /** Wrap fetch with 401 detection so any unauthenticated response
+   *  triggers the session-expired flow. Practice + exam both go through
+   *  this — if the cookie lapsed mid-test, the user should know. */
+  async function authFetch(url, opts) {
+    const res = await fetch(url, Object.assign({ credentials: "same-origin" }, opts || {}));
+    if (res.status === 401) {
+      showSessionExpiredOverlay();
+      throw new Error("Session expired");
+    }
+    return res;
+  }
+
   function onExamPopState() {
     // Always cancel the back — push a fresh history entry to stay put.
     if (!examNavLockActive) return;
@@ -647,6 +776,9 @@
     // Practice-mode soft leave warning — see installPracticeLeaveGuards
     // for what gets intercepted and why exam mode is excluded.
     installPracticeLeaveGuards();
+    // Practice-mode idle auto-pause — saves progress + shows resume
+    // overlay after a few minutes of no activity.
+    installIdleDetection();
   }
 
   /* Sidebar pagination — page size adapts to the visible sidebar
@@ -1144,7 +1276,7 @@
       submitBtn.textContent = "Submitting…";
     }
     try {
-      const res = await fetch("/api/questions/" + q.id + "/submit", {
+      const res = await authFetch("/api/questions/" + q.id + "/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selectedChoiceIds: Array.from(ans.selected) }),
@@ -1437,7 +1569,7 @@
       });
     });
 
-    return fetch("/api/test-attempts", {
+    return authFetch("/api/test-attempts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
