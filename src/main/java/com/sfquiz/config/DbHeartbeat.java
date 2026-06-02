@@ -30,7 +30,7 @@ public class DbHeartbeat {
         this.jdbc = new JdbcTemplate(ds);
     }
 
-    @Scheduled(fixedDelay = 60000, initialDelay = 30000)
+    @Scheduled(fixedDelay = 30000, initialDelay = 20000)
     public void pingDb() {
         try {
             jdbc.queryForObject("SELECT 1", Integer.class);
