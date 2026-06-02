@@ -53,8 +53,10 @@
   <p class="banner banner-ok"    th:if="${adminMessage}" th:text="${adminMessage}">message</p>
   <p class="banner banner-ok"    th:if="${param.promoted}">User promoted to admin. They've been emailed about the new access.</p>
   <p class="banner banner-ok"    th:if="${param.promotedSuper}">User promoted to <strong>SUPER ADMIN</strong>.</p>
+  <p class="banner banner-ok"    th:if="${param.promotedVerifier}">User promoted to <strong>VERIFIER</strong> — they'll vote 👍/👎 with reasons during practice.</p>
   <p class="banner banner-ok"    th:if="${param.demoted}">User demoted from admin role.</p>
   <p class="banner banner-ok"    th:if="${param.demotedSuper}">Super admin stepped down to regular admin.</p>
+  <p class="banner banner-ok"    th:if="${param.demotedVerifier}">Verifier stepped down to regular user.</p>
 
   <section class="issued-card" th:if="${issuedPassword != null}">
     <h2 th:if="${issuedReason == 'approved'}">Account approved — share these credentials</h2>
@@ -182,6 +184,30 @@ Tip: If you have trouble signing in on Chrome (saved passwords auto-fill or bloc
                       data-confirm="Promote this user to a domain admin? They will land in the user list with the role ADMIN. Click 'Manage certs' next to their row to tick which certifications they should govern — until you assign at least one, they will be able to sign in but won't be able to approve / reject any questions."
                       data-confirm-ok="Promote">
                 Promote to domain admin
+              </button>
+            </form>
+            <!-- Promote regular user → VERIFIER (vote 👍/👎 with reason during practice). -->
+            <form method="post" th:action="@{|/admin/users/${u.id}/promote-verifier|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')"
+                  th:if="${u.role.name() == 'USER'}">
+              <button class="btn btn-secondary btn-sm" type="submit"
+                      title="Move this user into the VERIFIER role — they'll be required to vote 👍/👎 with a short reason on every question they see in practice. Their feedback feeds the admin quality reports."
+                      data-confirm-title="Promote to verifier"
+                      data-confirm="Promote this user to the VERIFIER role? During practice they'll be required to vote 👍/👎 with a short reason on every question before moving on. They keep regular access otherwise."
+                      data-confirm-ok="Promote to verifier">
+                Promote to verifier
+              </button>
+            </form>
+            <!-- Step a verifier back down to a regular user. -->
+            <form method="post" th:action="@{|/admin/users/${u.id}/demote-verifier|}" style="display:inline"
+                  sec:authorize="hasRole('SUPERADMIN')"
+                  th:if="${u.role.name() == 'VERIFIER'}">
+              <button class="btn btn-warning btn-sm" type="submit"
+                      title="Step down to USER — no more required votes during practice."
+                      data-confirm-title="Step down to user"
+                      data-confirm="Step this verifier down to a regular user? They will no longer be required to vote on questions during practice."
+                      data-confirm-ok="Step down">
+                Step down to user
               </button>
             </form>
             <form method="post" th:action="@{|/admin/users/${u.id}/promote-superadmin|}" style="display:inline"

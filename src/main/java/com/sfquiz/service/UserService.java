@@ -375,6 +375,54 @@ public class UserService {
         return u;
     }
 
+    /** Move an ACTIVE user into the VERIFIER role so they can vote 👍/👎
+     *  with required reasons during practice. Admins/super-admins can't
+     *  be demoted to verifier through this path — that's an explicit
+     *  demote step first. Idempotent. */
+    public User promoteToVerifier(Long userId) {
+        User u = users.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (u.getRole() == UserRole.VERIFIER) {
+            return u; // already a verifier — no-op
+        }
+        if (u.getStatus() != UserStatus.ACTIVE) {
+            throw new IllegalStateException("Only ACTIVE users can be promoted to verifier.");
+        }
+        if (u.getRole() == UserRole.ADMIN || u.getRole() == UserRole.SUPERADMIN) {
+            throw new IllegalStateException(
+                    "Demote this admin to a regular user first, then promote to verifier.");
+        }
+        u.setRole(UserRole.VERIFIER);
+        users.save(u);
+
+        String body = "Hi " + safeName(u) + ",\n\n"
+                + "You've been promoted to a verifier on Salesforce Admin Quiz. "
+                + "While you take practice tests, you'll be asked to vote 👍/👎 with a "
+                + "short reason on every question before moving on — your feedback flows "
+                + "into the admin quality reports.\n\n"
+                + "Start practising:  " + baseUrl + "/\n";
+        email.send(u.getEmail(), "You're now a verifier on Salesforce Admin Quiz", body);
+        log.info("Promoted user {} to VERIFIER", u.getEmail());
+        return u;
+    }
+
+    /** Step a verifier back down to a regular USER. Idempotent — calling
+     *  on a non-verifier is a no-op. */
+    public User demoteVerifierToUser(Long userId, String callerEmail) {
+        User u = users.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (u.getRole() != UserRole.VERIFIER) {
+            return u;
+        }
+        if (callerEmail != null && callerEmail.equalsIgnoreCase(u.getEmail())) {
+            throw new IllegalStateException("You can't change your own role.");
+        }
+        u.setRole(UserRole.USER);
+        users.save(u);
+        log.info("Demoted verifier {} to USER (by {})", u.getEmail(), callerEmail);
+        return u;
+    }
+
     /** Promote an ACTIVE user (typically an ADMIN) to SUPERADMIN. Only the
      *  caller-side controller should invoke this, and only when the caller is
      *  themselves a SUPERADMIN — the controller enforces that via

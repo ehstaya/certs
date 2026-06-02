@@ -193,6 +193,18 @@ public class AdminController {
         return "redirect:/admin/users?promotedSuper";
     }
 
+    @PostMapping("/users/{id}/promote-verifier")
+    public String promoteVerifier(@PathVariable Long id) {
+        users.promoteToVerifier(id);
+        return "redirect:/admin/users?promotedVerifier";
+    }
+
+    @PostMapping("/users/{id}/demote-verifier")
+    public String demoteVerifier(@PathVariable Long id, Authentication auth) {
+        users.demoteVerifierToUser(id, auth == null ? null : auth.getName());
+        return "redirect:/admin/users?demotedVerifier";
+    }
+
     @PostMapping("/users/{id}/demote-superadmin")
     public String demoteSuperAdmin(@PathVariable Long id, Authentication auth) {
         users.demoteSuperAdminToAdmin(id, auth == null ? null : auth.getName());
