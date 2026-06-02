@@ -297,20 +297,32 @@ public class QuestionAdminService {
                                 Set<String> managedSlugs) {
         if (pageSize <= 0) pageSize = 20;
         if (page < 0) page = 0;
-        List<Question> all = (examSlug == null || examSlug.isBlank())
-                ? repo.findByStatusOrderByNumber(status)
-                : repo.findByExamSlugAndStatusOrderByNumber(examSlug, status);
-        if (managedSlugs != null && !managedSlugs.contains("*")) {
-            all = all.stream()
-                    .filter(q -> q.getExam() != null && managedSlugs.contains(q.getExam().getSlug()))
-                    .toList();
+        // DB-level pagination — previous code loaded the entire bank
+        // (~500 approved questions × EAGER choices = ~2500-row JOIN) just
+        // to slice 20 rows in memory. That was the /admin/questions/approved
+        // 10-second hit when SUPERADMIN browsed without an exam filter.
+        org.springframework.data.domain.Pageable pageable =
+                org.springframework.data.domain.PageRequest.of(
+                        page, pageSize,
+                        org.springframework.data.domain.Sort.by("number").ascending());
+        boolean hasExam = examSlug != null && !examSlug.isBlank();
+        org.springframework.data.domain.Page<Question> pg;
+        if (hasExam) {
+            // Controller already gates access via requireCanManage when an
+            // exam slug is pinned, so the manager-scope filter is redundant
+            // here regardless of role.
+            pg = repo.findByExamSlugAndStatus(examSlug, status, pageable);
+        } else if (managedSlugs == null || managedSlugs.contains("*")) {
+            // SUPERADMIN (or callers passing null/wildcard) — no scope.
+            pg = repo.findByStatus(status, pageable);
+        } else if (managedSlugs.isEmpty()) {
+            return new PagedApproved(List.of(), 0, 1, 0, pageSize);
+        } else {
+            pg = repo.findByStatusAndExamSlugIn(status, managedSlugs, pageable);
         }
-        long total = all.size();
-        int totalPages = (int) Math.max(1, (total + pageSize - 1) / pageSize);
-        if (page >= totalPages) page = totalPages - 1;
-        int from = Math.min(page * pageSize, all.size());
-        int to = Math.min(from + pageSize, all.size());
-        return new PagedApproved(all.subList(from, to), page, totalPages, total, pageSize);
+        int totalPages = Math.max(1, pg.getTotalPages());
+        int actualPage = Math.min(page, totalPages - 1);
+        return new PagedApproved(pg.getContent(), actualPage, totalPages, pg.getTotalElements(), pageSize);
     }
 
     public long retiredCount() {

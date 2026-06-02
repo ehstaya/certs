@@ -101,6 +101,20 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
     List<Question> findTop10ByStatusAndExamSlugInOrderByIdDesc(
             Question.Status status, java.util.Collection<String> slugs);
 
+    /** Paged + filtered listings for the /admin/questions/approved and
+     *  /admin/questions/retired pages. Spring Data slices at the DB so
+     *  we don't load the entire bank just to take a 20-row window.
+     *  countBy* variants give the page-total without a second full scan. */
+    org.springframework.data.domain.Page<Question> findByStatus(
+            Question.Status status, org.springframework.data.domain.Pageable pageable);
+
+    org.springframework.data.domain.Page<Question> findByExamSlugAndStatus(
+            String slug, Question.Status status, org.springframework.data.domain.Pageable pageable);
+
+    org.springframework.data.domain.Page<Question> findByStatusAndExamSlugIn(
+            Question.Status status, java.util.Collection<String> slugs,
+            org.springframework.data.domain.Pageable pageable);
+
     Optional<Question> findFirstByExamOrderByNumberDesc(Exam exam);
 
     boolean existsByExamAndText(Exam exam, String text);
