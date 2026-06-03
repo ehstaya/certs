@@ -35,17 +35,20 @@ public class QuestionAdminService {
     private final ObjectMapper json;
     private final ExplanationEnricher enricher;
     private final com.sfquiz.repository.QuestionActionRepository questionActions;
+    private final QuestionSubmitLookup submitLookup;
 
     public QuestionAdminService(QuestionRepository repo, ExamRepository exams,
                                 ImportEventRepository importEvents, ObjectMapper json,
                                 ExplanationEnricher enricher,
-                                com.sfquiz.repository.QuestionActionRepository questionActions) {
+                                com.sfquiz.repository.QuestionActionRepository questionActions,
+                                QuestionSubmitLookup submitLookup) {
         this.repo = repo;
         this.exams = exams;
         this.importEvents = importEvents;
         this.json = json;
         this.enricher = enricher;
         this.questionActions = questionActions;
+        this.submitLookup = submitLookup;
     }
 
     /** Append one row to the action log. Cheap, non-blocking — never
@@ -255,6 +258,7 @@ public class QuestionAdminService {
                 id, q.getNumber(), q.getStatus(), q.getRetiredByEmail(), adminEmail);
         logAction(q, com.sfquiz.entity.QuestionAction.Action.PERMANENT_DELETE, adminEmail);
         repo.delete(q);
+        submitLookup.evict(id);
     }
 
     /** Restore a retired question to the live bank. */
@@ -544,6 +548,10 @@ public class QuestionAdminService {
         }
         repo.save(q);
         logAction(q, com.sfquiz.entity.QuestionAction.Action.EDIT, adminEmail);
+        // Invalidate the submit cache so a user mid-test sees the new
+        // correct-choice set + explanation the next time they answer
+        // this question, not after the TTL elapses.
+        submitLookup.evict(id);
     }
 
     public List<Question> pending() {

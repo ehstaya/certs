@@ -3,7 +3,6 @@ package com.sfquiz.service;
 import com.sfquiz.dto.QuestionDto;
 import com.sfquiz.dto.SubmitRequest;
 import com.sfquiz.dto.SubmitResponse;
-import com.sfquiz.entity.Choice;
 import com.sfquiz.entity.Exam;
 import com.sfquiz.entity.ExamTopic;
 import com.sfquiz.entity.Question;
@@ -33,13 +32,16 @@ public class QuizService {
     private final ExamRepository exams;
     private final ExamTopicRepository examTopics;
     private final QuestionRandomizer randomizer;
+    private final QuestionSubmitLookup submitLookup;
 
     public QuizService(QuestionRepository repo, ExamRepository exams, ExamTopicRepository examTopics,
-                       QuestionRandomizer randomizer) {
+                       QuestionRandomizer randomizer,
+                       QuestionSubmitLookup submitLookup) {
         this.repo = repo;
         this.exams = exams;
         this.examTopics = examTopics;
         this.randomizer = randomizer;
+        this.submitLookup = submitLookup;
     }
 
     /** Replay the exact question set captured on a previous attempt — the
@@ -168,14 +170,15 @@ public class QuizService {
     }
 
     public SubmitResponse submit(Long questionId, SubmitRequest req) {
-        Question q = repo.findById(questionId)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown question id: " + questionId));
+        // The correct-choice set + explanation + helpUrl are fetched
+        // through the QuestionSubmitLookup proxy so they're served from
+        // an in-memory 5-minute cache. A user mid-test can keep
+        // submitting answers even through brief Heroku Postgres
+        // connectivity blips — the DB is only touched on the first
+        // submit for each question (or after the TTL elapses).
+        QuestionSubmitLookup.SubmitView view = submitLookup.load(questionId);
 
-        Set<Long> correctIds = q.getChoices().stream()
-                .filter(Choice::isCorrect)
-                .map(Choice::getId)
-                .collect(Collectors.toSet());
-
+        Set<Long> correctIds = new HashSet<>(view.correctChoiceIds());
         Set<Long> selectedIds = req.getSelectedChoiceIds() == null
                 ? new HashSet<>()
                 : new HashSet<>(req.getSelectedChoiceIds());
@@ -184,8 +187,8 @@ public class QuizService {
         r.setCorrect(correctIds.equals(selectedIds));
         r.setCorrectChoiceIds(List.copyOf(correctIds));
         r.setSelectedChoiceIds(List.copyOf(selectedIds));
-        r.setExplanation(q.getExplanation());
-        r.setHelpUrl(q.getHelpUrl());
+        r.setExplanation(view.explanation());
+        r.setHelpUrl(view.helpUrl());
         return r;
     }
 }
