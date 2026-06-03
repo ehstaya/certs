@@ -294,6 +294,14 @@
     return Number.isFinite(n) && n > 0 ? n : null;
   }
 
+  /** ?resume=<id>&restart=1 — same question set + order as the saved
+   *  test but answers cleared + position back to Q1. Used by the
+   *  "Retake from start" button on the Saved-tests section. */
+  function isResumeRestart() {
+    const v = new URLSearchParams(window.location.search).get("restart");
+    return v === "1" || v === "true";
+  }
+
   async function init() {
     examSlug = getExamSlug();
     const retakeId = getRetakeAttemptId();
@@ -333,10 +341,14 @@
             state.questions.forEach(function (q) {
               state.answers.set(q.id, { selected: new Set(), submitted: false, correct: false, visited: false });
             });
-            // Rehydrate answers + active index from the saved snapshot.
+            // Rehydrate answers + active index from the saved snapshot —
+            // unless ?restart=1 is set (Retake from start), in which
+            // case we keep the question set but discard every answer
+            // and reset to Q1.
+            const restart = isResumeRestart();
             let saved = null;
             try { saved = JSON.parse(snap.savedStateJson || "null"); } catch (e) {}
-            if (saved && Array.isArray(saved.answers)) {
+            if (!restart && saved && Array.isArray(saved.answers)) {
               saved.answers.forEach(function (sa) {
                 const target = state.answers.get(sa.id);
                 if (!target) return;
@@ -349,7 +361,7 @@
                 target.visited = !!sa.visited;
               });
             }
-            state.index = saved && Number.isFinite(saved.index)
+            state.index = (!restart && saved && Number.isFinite(saved.index))
               ? Math.min(Math.max(0, saved.index), state.questions.length - 1)
               : 0;
             state.startedAt = new Date();

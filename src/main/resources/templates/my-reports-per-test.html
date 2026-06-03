@@ -143,7 +143,9 @@
     <section th:if="${savedTests != null and not #lists.isEmpty(savedTests)}"
              style="margin: 18px 0 24px; padding: 16px 18px; background:#fff8db; border:1px solid #fbd56b; border-radius:10px;">
       <h2 style="margin: 0 0 4px; font-size: 16px; color: #7a5a00;">
-        Saved tests <span class="muted" style="font-size: 12px; font-weight: 400;">— pick up where you left off</span>
+        Saved tests
+        <span class="muted" style="font-size: 12px; font-weight: 400;"
+              th:text="|(${savedTotalElements}) — pick up where you left off|">(0)</span>
       </h2>
       <table class="admin-table" style="margin-top: 10px;">
         <thead><tr><th>Name</th><th>Mode</th><th>Last saved</th><th>Progress</th><th>Actions</th></tr></thead>
@@ -161,6 +163,11 @@
             <td>
               <a class="btn btn-primary btn-sm" th:href="@{|/?resume=${s.id}|}"
                  title="Resume this test from the exact question you left off on.">↪ Resume</a>
+              <a class="btn btn-secondary btn-sm" th:href="@{|/?resume=${s.id}&restart=1|}"
+                 data-confirm-title="Retake from start"
+                 th:attr="data-confirm=|Retake '${s.displayName}' from the beginning? Same questions in the same order, but your in-progress answers will be cleared and you'll go back to question 1.|"
+                 data-confirm-ok="Retake from start"
+                 title="Same question set, but start over from question 1 with no answers.">↻ Retake from start</a>
               <form th:action="@{|/api/test-attempts/${s.id}/delete-saved|}" method="post" style="display:inline">
                 <button class="btn btn-danger btn-sm" type="submit"
                         data-confirm-title="Delete saved test"
@@ -171,6 +178,19 @@
           </tr>
         </tbody>
       </table>
+      <!-- Saved-tests pager — hidden when the result fits on one page. -->
+      <nav th:if="${savedTotalPages != null and savedTotalPages > 1}"
+           style="display:flex; align-items:center; gap:10px; margin-top: 10px; font-size: 13px;"
+           aria-label="Saved tests pagination">
+        <a class="btn btn-sm btn-secondary"
+           th:classappend="${savedPage <= 0} ? 'is-locked' : ''"
+           th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, savedPage=${savedPage - 1}, finishedPage=${finishedPage})}">‹ Prev</a>
+        <span class="muted"
+              th:text="|Page ${savedPage + 1} of ${savedTotalPages}|">Page 1 of 1</span>
+        <a class="btn btn-sm btn-secondary"
+           th:classappend="${savedPage + 1 >= savedTotalPages} ? 'is-locked' : ''"
+           th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, savedPage=${savedPage + 1}, finishedPage=${finishedPage})}">Next ›</a>
+      </nav>
     </section>
 
     <!-- Performance by area — shows which cert objectives the user
@@ -272,10 +292,13 @@
       </div>
     </section>
 
-    <h2>Attempt history</h2>
+    <h2>Finished tests <span class="muted" style="font-size: 13px; font-weight: 400;"
+         th:if="${finishedTotalElements != null}"
+         th:text="|(${finishedTotalElements})|">(0)</span></h2>
     <p class="muted" style="font-size:13px;">
       Click a <strong>Correct</strong> or <strong>Incorrect</strong> count to review the questions
       with explanations — useful for learning from what you got right and where you went wrong.
+      Finished tests are immutable — they can't be replayed.
     </p>
     <!-- Mode filter — All / Practice / Real exam. Counts in the option
          labels are pre-filter totals so the user always knows how many
@@ -292,11 +315,11 @@
       </select>
       <noscript><button class="btn btn-sm" type="submit">Apply</button></noscript>
     </form>
-    <div class="empty" th:if="${#lists.isEmpty(rows)}">No attempts match this filter on this test.</div>
-    <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
+    <div class="empty" th:if="${#lists.isEmpty(finishedTests)}">No finished tests on this exam yet.</div>
+    <table class="admin-table" th:unless="${#lists.isEmpty(finishedTests)}">
       <thead><tr><th>Name</th><th>Finished</th><th>Mode</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th></tr></thead>
       <tbody>
-        <tr th:each="a : ${rows}">
+        <tr th:each="a : ${finishedTests}">
           <td>
             <strong th:text="${a.displayName != null and not #strings.isEmpty(a.displayName) ? a.displayName : ('#' + a.id)}">Name</strong>
           </td>
@@ -333,6 +356,19 @@
         </tr>
       </tbody>
     </table>
+    <!-- Finished-tests pager — hidden when the result fits on one page. -->
+    <nav th:if="${finishedTotalPages != null and finishedTotalPages > 1}"
+         style="display:flex; align-items:center; gap:10px; margin-top: 10px; font-size: 13px;"
+         aria-label="Finished tests pagination">
+      <a class="btn btn-sm btn-secondary"
+         th:classappend="${finishedPage <= 0} ? 'is-locked' : ''"
+         th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, savedPage=${savedPage}, finishedPage=${finishedPage - 1})}">‹ Prev</a>
+      <span class="muted"
+            th:text="|Page ${finishedPage + 1} of ${finishedTotalPages}|">Page 1 of 1</span>
+      <a class="btn btn-sm btn-secondary"
+         th:classappend="${finishedPage + 1 >= finishedTotalPages} ? 'is-locked' : ''"
+         th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, savedPage=${savedPage}, finishedPage=${finishedPage + 1})}">Next ›</a>
+    </nav>
   </main>
 </div>
 </body>

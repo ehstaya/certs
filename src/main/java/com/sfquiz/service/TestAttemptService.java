@@ -201,6 +201,27 @@ public class TestAttemptService {
                 u, e, TestAttempt.Status.SAVED);
     }
 
+    /** Paged variant for the per-test page. Status drives both sections
+     *  (SAVED → "Saved tests", FINISHED → "Attempt history"). Returns an
+     *  empty page when the user / exam isn't known so the template can
+     *  render its empty state without special-casing. */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<TestAttempt> pageForUserAndExam(
+            String userEmail, String examSlug,
+            TestAttempt.Status status,
+            int page, int pageSize) {
+        User u = users.findByEmailIgnoreCase(userEmail).orElse(null);
+        Exam e = exams.findBySlug(examSlug).orElse(null);
+        if (u == null || e == null) {
+            return org.springframework.data.domain.Page.empty();
+        }
+        org.springframework.data.domain.Pageable p = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, page),
+                Math.min(50, Math.max(1, pageSize)),
+                org.springframework.data.domain.Sort.by("finishedAt").descending());
+        return attempts.findByUserAndExamAndStatus(u, e, status, p);
+    }
+
     /** Save a practice test in progress. Creates a new SAVED row on first
      *  call, updates the existing one on subsequent calls. The saved-state
      *  JSON is opaque to the server — it's a client-supplied snapshot the

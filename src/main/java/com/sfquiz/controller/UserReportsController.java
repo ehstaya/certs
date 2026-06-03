@@ -76,6 +76,8 @@ public class UserReportsController {
     public String perTest(Authentication auth,
                           @RequestParam(name = "exam", required = false) String exam,
                           @RequestParam(name = "mode", required = false) String modeFilter,
+                          @RequestParam(name = "savedPage", defaultValue = "0") int savedPage,
+                          @RequestParam(name = "finishedPage", defaultValue = "0") int finishedPage,
                           Model model) {
         String email = currentEmail(auth);
         List<ExamDto> exams = examService.listActive();
@@ -129,10 +131,28 @@ public class UserReportsController {
         model.addAttribute("topicBreakdown", topicBreakdown);
         // Saved tests in progress on this exam — rendered as a separate
         // section above the finished history so the user can resume or
-        // delete them. Most-recently-saved first.
-        List<TestAttempt> savedTests = (exam == null) ? List.of()
-                : attempts.savedForUserAndExam(email, exam);
-        model.addAttribute("savedTests", savedTests);
+        // delete them. Paged so a user with hundreds of drafts doesn't
+        // ship the whole list per render.
+        final int savedPageSize = 10;
+        final int finishedPageSize = 10;
+        org.springframework.data.domain.Page<TestAttempt> savedPg = (exam == null)
+                ? org.springframework.data.domain.Page.empty()
+                : attempts.pageForUserAndExam(email, exam,
+                        TestAttempt.Status.SAVED, savedPage, savedPageSize);
+        model.addAttribute("savedTests", savedPg.getContent());
+        model.addAttribute("savedPage", savedPg.getNumber());
+        model.addAttribute("savedTotalPages", savedPg.getTotalPages());
+        model.addAttribute("savedTotalElements", savedPg.getTotalElements());
+
+        org.springframework.data.domain.Page<TestAttempt> finishedPg = (exam == null)
+                ? org.springframework.data.domain.Page.empty()
+                : attempts.pageForUserAndExam(email, exam,
+                        TestAttempt.Status.FINISHED, finishedPage, finishedPageSize);
+        model.addAttribute("finishedTests", finishedPg.getContent());
+        model.addAttribute("finishedPage", finishedPg.getNumber());
+        model.addAttribute("finishedTotalPages", finishedPg.getTotalPages());
+        model.addAttribute("finishedTotalElements", finishedPg.getTotalElements());
+
         model.addAttribute("exams", exams);
         // Per-exam aggregate for the header cards.
         int avg = 0, best = 0, passedCount = 0;

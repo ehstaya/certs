@@ -29,6 +29,12 @@ public interface TestAttemptRepository extends JpaRepository<TestAttempt, Long> 
     List<TestAttempt> findByUserAndExamAndStatusOrderByFinishedAtDesc(
             User user, Exam exam, com.sfquiz.entity.TestAttempt.Status status);
 
+    /** Paged variants for the per-test page so a user with hundreds of
+     *  attempts doesn't ship the whole list back per render. */
+    org.springframework.data.domain.Page<TestAttempt> findByUserAndExamAndStatus(
+            User user, Exam exam, com.sfquiz.entity.TestAttempt.Status status,
+            org.springframework.data.domain.Pageable pageable);
+
     /** Per-exam summary stats for one user: attempts, average score, pass count.
      *  FINISHED-only so a saved-but-not-finished session doesn't dilute averages
      *  with a zero score. */

@@ -33,7 +33,11 @@ public class ExamService {
      *  — each of which loaded the full Question entities (with EAGER choices)
      *  just to call .size(). On Salesforce Admin (~400 approved questions,
      *  8 topics) that was 8 heavy queries → ~2 s per topics-info hit. Now
-     *  it's two queries: the topic list + one GROUP BY for counts. */
+     *  it's two queries: the topic list + one GROUP BY for counts. Cached
+     *  60 s — topic weights + admin imports change rarely and a fresh
+     *  practice launch dominates the call pattern. */
+    @org.springframework.cache.annotation.Cacheable(
+            value = com.sfquiz.config.CacheConfig.TOPICS, key = "#slug")
     public List<ExamTopicDto> listTopics(String slug) {
         Exam exam = exams.findBySlug(slug).orElse(null);
         if (exam == null) return List.of();
@@ -61,7 +65,9 @@ public class ExamService {
      *  Was N+1 (one COUNT(*) per exam). Now: 2 queries — the exam list, plus
      *  a single GROUP BY for approved counts — assembled in-memory. Hit on
      *  every page that calls /api/exams (i.e. essentially every page), so
-     *  this was the dominant cost on signed-in navigation. */
+     *  this was the dominant cost on signed-in navigation. Cached 60 s
+     *  to bypass the DB entirely on the next page load. */
+    @org.springframework.cache.annotation.Cacheable(value = com.sfquiz.config.CacheConfig.EXAMS)
     public List<ExamDto> listActive() {
         List<Exam> activeExams = exams.findByActiveTrueOrderBySortOrderAscNameAsc();
         java.util.Map<Long, Long> approvedByExamId = new java.util.HashMap<>();
@@ -98,6 +104,12 @@ public class ExamService {
      *  Empty/null {@code topics} just creates the cert without weights
      *  (matches the basic flow). Duplicate-slug check stays at the front
      *  so we never leave a half-built exam if the validation fires. */
+    @org.springframework.cache.annotation.Caching(evict = {
+        @org.springframework.cache.annotation.CacheEvict(
+                value = com.sfquiz.config.CacheConfig.EXAMS, allEntries = true),
+        @org.springframework.cache.annotation.CacheEvict(
+                value = com.sfquiz.config.CacheConfig.TOPICS, allEntries = true)
+    })
     public Exam createExam(String name, String slug, String description,
                            int questionsPerSession, int durationMinutes,
                            int passingScorePercent,
@@ -153,6 +165,12 @@ public class ExamService {
      *  {@code null} or empty to keep the existing breakdown. Used by the
      *  super-admin Edit + Republish flow. */
     @org.springframework.transaction.annotation.Transactional
+    @org.springframework.cache.annotation.Caching(evict = {
+        @org.springframework.cache.annotation.CacheEvict(
+                value = com.sfquiz.config.CacheConfig.EXAMS, allEntries = true),
+        @org.springframework.cache.annotation.CacheEvict(
+                value = com.sfquiz.config.CacheConfig.TOPICS, allEntries = true)
+    })
     public Exam updateExam(Long id, String name, String description,
                            int questionsPerSession, int durationMinutes,
                            int passingScorePercent,

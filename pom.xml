@@ -78,6 +78,19 @@
             <artifactId>pdfbox</artifactId>
             <version>3.0.3</version>
         </dependency>
+        <!-- Caffeine + Spring's cache abstraction. Used to cache the
+             read-mostly /api/exams and /api/exams/{slug}/topics responses
+             with a short TTL so user-perceived practice-launch latency
+             doesn't depend on Heroku Postgres being warm. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>3.1.8</version>
+        </dependency>
     </dependencies>
 
     <build>
