@@ -27,20 +27,33 @@ public class CacheConfig {
      *  mid-test without making admin edits to a question linger past a
      *  few minutes. Bigger size (1024) since this is per-question. */
     public static final String SUBMIT_LOOKUP = "questions.submitLookup";
+    /** Full QuestionDto by id — populated at quiz launch, used by every
+     *  subsequent launch so the same user / coworker re-clicking
+     *  Practice doesn't pay for findAllById against a cold pool. 5 min
+     *  TTL matches SUBMIT_LOOKUP. */
+    public static final String QUESTION_DTO = "questions.dto";
+    /** Per-exam list of (id, topic) tuples driving the sampler. 60 s TTL
+     *  — admin imports change this, but rarely during a session. */
+    public static final String EXAM_ID_TOPIC = "exams.idTopicSampler";
 
     @Bean
     public CacheManager cacheManager() {
-        // Default cache (EXAMS + TOPICS) — short 60 s TTL.
-        CaffeineCacheManager mgr = new CaffeineCacheManager(EXAMS, TOPICS);
+        // Default cache (EXAMS + TOPICS + EXAM_ID_TOPIC) — short 60 s TTL.
+        CaffeineCacheManager mgr = new CaffeineCacheManager(EXAMS, TOPICS, EXAM_ID_TOPIC);
         mgr.setCaffeine(Caffeine.newBuilder()
                 .expireAfterWrite(60, TimeUnit.SECONDS)
                 .maximumSize(64));
-        // Override SUBMIT_LOOKUP with a longer TTL (5 min) so a brief
-        // Heroku Postgres blip mid-test still serves question metadata
-        // from memory. Bigger size cap since this is per-question.
+        // SUBMIT_LOOKUP — 5 min TTL so a brief Heroku Postgres blip mid-test
+        // still serves question metadata from memory.
         mgr.registerCustomCache(SUBMIT_LOOKUP, Caffeine.newBuilder()
                 .expireAfterWrite(5, TimeUnit.MINUTES)
                 .maximumSize(1024)
+                .build());
+        // QUESTION_DTO — 5 min TTL, bigger cap (per question). Lets the
+        // launch path serve from memory once warmed.
+        mgr.registerCustomCache(QUESTION_DTO, Caffeine.newBuilder()
+                .expireAfterWrite(5, TimeUnit.MINUTES)
+                .maximumSize(2048)
                 .build());
         return mgr;
     }

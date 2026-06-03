@@ -21,7 +21,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class QuizService {
@@ -33,15 +32,73 @@ public class QuizService {
     private final ExamTopicRepository examTopics;
     private final QuestionRandomizer randomizer;
     private final QuestionSubmitLookup submitLookup;
+    private final org.springframework.cache.CacheManager cacheManager;
 
     public QuizService(QuestionRepository repo, ExamRepository exams, ExamTopicRepository examTopics,
                        QuestionRandomizer randomizer,
-                       QuestionSubmitLookup submitLookup) {
+                       QuestionSubmitLookup submitLookup,
+                       org.springframework.cache.CacheManager cacheManager) {
         this.repo = repo;
         this.exams = exams;
         this.examTopics = examTopics;
         this.randomizer = randomizer;
         this.submitLookup = submitLookup;
+        this.cacheManager = cacheManager;
+    }
+
+    /** Cached read of the (id, topic) projection for the sampler.
+     *  Caffeine cache, 60 s TTL — admin edits to the bank are rare
+     *  vs. user launches per minute. */
+    @SuppressWarnings("unchecked")
+    private List<Object[]> idTopicRowsCached(String slug) {
+        org.springframework.cache.Cache cache =
+                cacheManager.getCache(com.sfquiz.config.CacheConfig.EXAM_ID_TOPIC);
+        if (cache != null) {
+            org.springframework.cache.Cache.ValueWrapper w = cache.get(slug);
+            if (w != null) return (List<Object[]>) w.get();
+        }
+        List<Object[]> fresh = repo.findIdAndTopicForSampling(slug, Question.Status.APPROVED);
+        if (cache != null) cache.put(slug, fresh);
+        return fresh;
+    }
+
+    /** Load Questions for the given IDs, preferring cached QuestionDtos
+     *  where possible. The output order matches {@code ids} exactly.
+     *  Cache misses fall back to a single findAllById call on the remainder
+     *  and populate the cache for the next launch. */
+    private List<QuestionDto> loadQuestionDtosOrdered(List<Long> ids, Map<String, String> nameMap) {
+        org.springframework.cache.Cache cache =
+                cacheManager.getCache(com.sfquiz.config.CacheConfig.QUESTION_DTO);
+        Map<Long, QuestionDto> byId = new HashMap<>(ids.size());
+        List<Long> misses = new ArrayList<>();
+        if (cache != null) {
+            for (Long id : ids) {
+                org.springframework.cache.Cache.ValueWrapper w = cache.get(id);
+                if (w != null) byId.put(id, (QuestionDto) w.get());
+                else misses.add(id);
+            }
+        } else {
+            misses.addAll(ids);
+        }
+        if (!misses.isEmpty()) {
+            // Single IN-list SELECT for everything not in cache.
+            List<Question> fetched = repo.findAllById(misses);
+            for (Question q : fetched) {
+                // Pre-warm submit cache from the loaded entity too.
+                submitLookup.preload(q);
+                QuestionDto dto = randomizer.randomize(q, nameMap);
+                byId.put(q.getId(), dto);
+                if (cache != null) cache.put(q.getId(), dto);
+            }
+        }
+        // Output in the order of the input ids; skip any id that didn't
+        // resolve (e.g. question got retired between sample + load).
+        List<QuestionDto> out = new ArrayList<>(ids.size());
+        for (Long id : ids) {
+            QuestionDto dto = byId.get(id);
+            if (dto != null) out.add(dto);
+        }
+        return out;
     }
 
     /** Replay the exact question set captured on a previous attempt — the
@@ -52,30 +109,10 @@ public class QuizService {
      *  re-session. Caller is responsible for ownership / permission. */
     public List<QuestionDto> listForRetake(List<Long> questionIds) {
         if (questionIds == null || questionIds.isEmpty()) return List.of();
-        // Build a one-shot id → Question map so we serve them in the
-        // attempt's original order even though findAllById returns them
-        // in whatever order JPA likes.
-        List<Question> rows = repo.findAllById(questionIds);
-        Map<Long, Question> byId = new HashMap<>(rows.size());
-        for (Question q : rows) byId.put(q.getId(), q);
-
-        List<Question> ordered = new ArrayList<>(questionIds.size());
-        for (Long id : questionIds) {
-            Question q = byId.get(id);
-            // Skip retired/rejected — keep approved ones. A question that
-            // was approved at the time of the original attempt may since
-            // have been retired; we just drop those from the retake.
-            if (q == null) continue;
-            if (q.getStatus() != Question.Status.APPROVED) continue;
-            ordered.add(q);
-            // Pre-warm the submit cache so every answer during the
-            // retake is served from memory even if the pool stalls.
-            submitLookup.preload(q);
-        }
+        // Serve from the QuestionDto cache where possible; fall back to
+        // a single findAllById for the misses. Order matches input.
         Map<String, String> nameMap = randomizer.buildSessionNameMap();
-        return ordered.stream()
-                .map(q -> randomizer.randomize(q, nameMap))
-                .collect(Collectors.toList());
+        return loadQuestionDtosOrdered(questionIds, nameMap);
     }
 
     /** Returns a topic-weighted random sample sized to {@code exam.questionsPerSession}.
@@ -95,7 +132,9 @@ public class QuizService {
 
         // Stage 1: lightweight (id, topic) tuples — drives the sampler
         // without loading question text / choices for the full bank.
-        List<Object[]> idTopicRows = repo.findIdAndTopicForSampling(examSlug, Question.Status.APPROVED);
+        // Cached 60 s so back-to-back launches of the same exam don't
+        // re-fire this scan against a possibly-stale pool.
+        List<Object[]> idTopicRows = idTopicRowsCached(examSlug);
         if (idTopicRows.isEmpty()) return List.of();
 
         List<ExamTopic> topics = examTopics.findByExamOrderBySortOrderAscIdAsc(exam);
@@ -104,24 +143,16 @@ public class QuizService {
                 : weightedSampleIds(idTopicRows, topics, sessionSize);
         if (selectedIds.isEmpty()) return List.of();
 
-        // Stage 2: load the full entities (with EAGER choices) for just
-        // the 60 sampled IDs. JpaRepository.findAllById issues a single
-        // IN-list SELECT.
-        List<Question> sampled = repo.findAllById(selectedIds);
-        // Pre-warm the submit cache — every question the user will
-        // answer this session is now in memory, so even a Postgres
-        // blip mid-test doesn't break the submit path.
-        for (Question q : sampled) submitLookup.preload(q);
+        // Stage 2: load the full QuestionDto for each sampled id —
+        // cached where possible so a re-launch within the TTL skips
+        // the IN-list SELECT entirely. Misses fall back to a single
+        // findAllById and warm the cache for next time.
+        Map<String, String> nameMap = randomizer.buildSessionNameMap();
+        List<QuestionDto> sampledDtos = loadQuestionDtosOrdered(selectedIds, nameMap);
         // findAllById doesn't preserve input order — re-shuffle so topics
         // aren't clustered (was the original "Final shuffle" step).
-        Collections.shuffle(sampled);
-
-        // Build one name-substitution map for the whole session so the same
-        // canonical company maps to the same alias across every question.
-        Map<String, String> nameMap = randomizer.buildSessionNameMap();
-        return sampled.stream()
-                .map(q -> randomizer.randomize(q, nameMap))
-                .collect(Collectors.toList());
+        Collections.shuffle(sampledDtos);
+        return sampledDtos;
     }
 
     private List<Long> uniformSampleIds(List<Object[]> idTopicRows, int n) {

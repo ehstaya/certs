@@ -36,12 +36,14 @@ public class QuestionAdminService {
     private final ExplanationEnricher enricher;
     private final com.sfquiz.repository.QuestionActionRepository questionActions;
     private final QuestionSubmitLookup submitLookup;
+    private final org.springframework.cache.CacheManager cacheManager;
 
     public QuestionAdminService(QuestionRepository repo, ExamRepository exams,
                                 ImportEventRepository importEvents, ObjectMapper json,
                                 ExplanationEnricher enricher,
                                 com.sfquiz.repository.QuestionActionRepository questionActions,
-                                QuestionSubmitLookup submitLookup) {
+                                QuestionSubmitLookup submitLookup,
+                                org.springframework.cache.CacheManager cacheManager) {
         this.repo = repo;
         this.exams = exams;
         this.importEvents = importEvents;
@@ -49,6 +51,7 @@ public class QuestionAdminService {
         this.enricher = enricher;
         this.questionActions = questionActions;
         this.submitLookup = submitLookup;
+        this.cacheManager = cacheManager;
     }
 
     /** Append one row to the action log. Cheap, non-blocking — never
@@ -259,6 +262,7 @@ public class QuestionAdminService {
         logAction(q, com.sfquiz.entity.QuestionAction.Action.PERMANENT_DELETE, adminEmail);
         repo.delete(q);
         submitLookup.evict(id);
+        evictQuestionDto(id);
     }
 
     /** Restore a retired question to the live bank. */
@@ -552,6 +556,21 @@ public class QuestionAdminService {
         // correct-choice set + explanation the next time they answer
         // this question, not after the TTL elapses.
         submitLookup.evict(id);
+        // Also evict the QuestionDto cache so the next quiz launch
+        // pulls the updated text + choices, not the stale dto.
+        evictQuestionDto(id);
+    }
+
+    /** Drop one entry from the launch-time question-dto cache. Kept
+     *  local so admin mutation paths can call it without depending on
+     *  a separate cache-handling service. */
+    private void evictQuestionDto(Long id) {
+        if (id == null) return;
+        try {
+            org.springframework.cache.Cache c = cacheManager == null ? null
+                    : cacheManager.getCache(com.sfquiz.config.CacheConfig.QUESTION_DTO);
+            if (c != null) c.evict(id);
+        } catch (Exception ignored) { /* best effort */ }
     }
 
     public List<Question> pending() {
