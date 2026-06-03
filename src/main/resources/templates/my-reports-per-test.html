@@ -60,6 +60,12 @@
     <h1>Per-test stats</h1>
     <p class="muted">Detailed performance on one exam — questions attempted, correct vs. incorrect, time taken, attempt history.</p>
 
+    <!-- Confirmation banner after Save & exit on the quiz page. -->
+    <p class="banner banner-ok" th:if="${param.savedName != null}"
+       style="background:#ecfdf5; border-left:3px solid #10b981; padding:10px 12px; border-radius:4px; color:#065f46;">
+      ✓ Saved <strong th:text="${param.savedName}">Name #1</strong> — find it under <em>Saved tests</em> below and click Resume to pick up.
+    </p>
+
     <form method="get" action="/my/reports/per-test" class="filter-bar">
       <label>
         <span>Exam</span>
@@ -121,19 +127,50 @@
         </div>
       </div>
 
-      <!-- Quick actions — both rendered as proper buttons (Review =
-           solid primary, Retake = outlined secondary) so the click
-           affordance matches across the app. -->
+      <!-- Quick actions — Finished tests are locked: you can review the
+           questions + explanations, but you can't retake. Resume + retake
+           live on Saved tests below. -->
       <div style="margin-top: 14px; display:flex; gap: 10px; flex-wrap: wrap;">
         <a class="btn btn-primary btn-sm"
            th:href="@{|/my/reports/attempts/${latestAttempt.id}|}">Review questions →</a>
-        <a class="btn btn-secondary btn-sm"
-           th:if="${latestAttempt.mode != null and latestAttempt.mode.name() == 'EXAM'}"
-           th:href="@{|/?retake=${latestAttempt.id}&mode=exam|}">↻ Retake (real exam)</a>
-        <a class="btn btn-secondary btn-sm"
-           th:unless="${latestAttempt.mode != null and latestAttempt.mode.name() == 'EXAM'}"
-           th:href="@{|/?retake=${latestAttempt.id}|}">↻ Retake (practice)</a>
       </div>
+    </section>
+
+    <!-- =================================================================
+         Saved tests in progress on this exam. Resume picks up exactly
+         where the user left off. Delete prunes a draft they don't want.
+         ================================================================= -->
+    <section th:if="${savedTests != null and not #lists.isEmpty(savedTests)}"
+             style="margin: 18px 0 24px; padding: 16px 18px; background:#fff8db; border:1px solid #fbd56b; border-radius:10px;">
+      <h2 style="margin: 0 0 4px; font-size: 16px; color: #7a5a00;">
+        Saved tests <span class="muted" style="font-size: 12px; font-weight: 400;">— pick up where you left off</span>
+      </h2>
+      <table class="admin-table" style="margin-top: 10px;">
+        <thead><tr><th>Name</th><th>Mode</th><th>Last saved</th><th>Progress</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr th:each="s : ${savedTests}">
+            <td><strong th:text="${s.displayName != null ? s.displayName : ('#' + s.id)}">Name #1</strong></td>
+            <td>
+              <span th:if="${s.mode != null and s.mode.name() == 'EXAM'}" class="pct-pill bad">REAL EXAM</span>
+              <span th:unless="${s.mode != null and s.mode.name() == 'EXAM'}" class="pct-pill mid">PRACTICE</span>
+            </td>
+            <td th:text="${#temporals.format(s.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+            <td>
+              <span th:text="${s.totalQuestions}">0</span> question(s) in the set
+            </td>
+            <td>
+              <a class="btn btn-primary btn-sm" th:href="@{|/?resume=${s.id}|}"
+                 title="Resume this test from the exact question you left off on.">↪ Resume</a>
+              <form th:action="@{|/api/test-attempts/${s.id}/delete-saved|}" method="post" style="display:inline">
+                <button class="btn btn-danger btn-sm" type="submit"
+                        data-confirm-title="Delete saved test"
+                        th:attr="data-confirm=|Permanently delete the saved test '${s.displayName}'? Your in-progress answers will be lost — this can't be undone.|"
+                        data-confirm-ok="Delete">🗑 Delete</button>
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <!-- Performance by area — shows which cert objectives the user
@@ -257,9 +294,12 @@
     </form>
     <div class="empty" th:if="${#lists.isEmpty(rows)}">No attempts match this filter on this test.</div>
     <table class="admin-table" th:unless="${#lists.isEmpty(rows)}">
-      <thead><tr><th>Finished</th><th>Mode</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th><th>Retake</th></tr></thead>
+      <thead><tr><th>Name</th><th>Finished</th><th>Mode</th><th>Score</th><th>Correct</th><th>Incorrect</th><th>Unanswered</th><th>Time</th><th>Result</th></tr></thead>
       <tbody>
         <tr th:each="a : ${rows}">
+          <td>
+            <strong th:text="${a.displayName != null and not #strings.isEmpty(a.displayName) ? a.displayName : ('#' + a.id)}">Name</strong>
+          </td>
           <td th:text="${#temporals.format(a.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
           <td>
             <span th:if="${a.mode != null and a.mode.name() == 'EXAM'}"
@@ -289,24 +329,6 @@
           <td>
             <span th:classappend="${a.passed} ? 'pct-pill good' : 'pct-pill bad'"
                   th:text="${a.passed} ? 'PASS' : 'FAIL'">FAIL</span>
-          </td>
-          <td>
-            <!-- Retake-same-test: works for every attempt. Post-feature rows
-                 replay the saved snapshot; legacy rows fall back to the
-                 questions the user actually submitted; the rare attempt
-                 with zero answers redirects to a fresh sample. The server
-                 decides which path; the button is the same.
-                 Mode rides along so an EXAM-mode attempt retakes in
-                 EXAM mode (locked-down UI), and a practice attempt
-                 retakes in practice. -->
-            <a th:if="${a.mode != null and a.mode.name() == 'EXAM'}"
-               th:href="@{|/?retake=${a.id}&mode=exam|}"
-               class="btn btn-primary btn-sm"
-               title="Retake this same set of questions in real-exam mode — no feedback during the test.">↻ Retake</a>
-            <a th:unless="${a.mode != null and a.mode.name() == 'EXAM'}"
-               th:href="@{|/?retake=${a.id}|}"
-               class="btn btn-primary btn-sm"
-               title="Take this same set of questions again — useful for spaced repetition.">↻ Retake</a>
           </td>
         </tr>
       </tbody>

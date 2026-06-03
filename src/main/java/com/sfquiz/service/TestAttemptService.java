@@ -174,18 +174,244 @@ public class TestAttemptService {
         return correct.equals(picked);
     }
 
+    /** Recent FINISHED attempts for the My-reports dashboard. */
     public List<TestAttempt> listForUser(String userEmail) {
         return users.findByEmailIgnoreCase(userEmail)
-                .map(attempts::findByUserOrderByFinishedAtDesc)
+                .map(u -> attempts.findByUserAndStatusOrderByFinishedAtDesc(
+                        u, TestAttempt.Status.FINISHED))
                 .orElse(List.of());
     }
 
+    /** Trend over time — FINISHED-only so an in-progress save can't
+     *  drag the chart down to a zero score. */
     public List<TestAttempt> trendForUserAndExam(String userEmail, String examSlug) {
         User u = users.findByEmailIgnoreCase(userEmail).orElse(null);
         Exam e = exams.findBySlug(examSlug).orElse(null);
         if (u == null || e == null) return List.of();
-        return attempts.findByUserAndExamOrderByFinishedAtAsc(u, e);
+        return attempts.findByUserAndExamAndStatusOrderByFinishedAtAsc(
+                u, e, TestAttempt.Status.FINISHED);
     }
+
+    /** Per-test page Saved-tests section — most recently touched first. */
+    public List<TestAttempt> savedForUserAndExam(String userEmail, String examSlug) {
+        User u = users.findByEmailIgnoreCase(userEmail).orElse(null);
+        Exam e = exams.findBySlug(examSlug).orElse(null);
+        if (u == null || e == null) return List.of();
+        return attempts.findByUserAndExamAndStatusOrderByFinishedAtDesc(
+                u, e, TestAttempt.Status.SAVED);
+    }
+
+    /** Save a practice test in progress. Creates a new SAVED row on first
+     *  call, updates the existing one on subsequent calls. The saved-state
+     *  JSON is opaque to the server — it's a client-supplied snapshot the
+     *  client knows how to rehydrate. */
+    @Transactional
+    public TestAttempt saveAttempt(String userEmail, Long existingId, SaveRequest req) {
+        if (userEmail == null) throw new IllegalArgumentException("Not signed in");
+        if (req.examSlug() == null || req.examSlug().isBlank()) throw new IllegalArgumentException("Missing examSlug");
+
+        User u = users.findByEmailIgnoreCase(userEmail).orElseThrow(() -> new IllegalArgumentException("Unknown user"));
+        Exam e = exams.findBySlug(req.examSlug()).orElseThrow(() -> new IllegalArgumentException("Unknown exam"));
+
+        TestAttempt existing = null;
+        if (existingId != null) {
+            existing = attempts.findById(existingId).orElse(null);
+            if (existing != null && existing.getUser() != null
+                    && !existing.getUser().getId().equals(u.getId())) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "This saved test belongs to another user.");
+            }
+            if (existing != null && existing.getStatus() != TestAttempt.Status.SAVED) {
+                // Don't let a Finished attempt regress to Saved.
+                existing = null;
+            }
+        }
+        boolean isNew = (existing == null);
+        TestAttempt a;
+        if (isNew) {
+            a = new TestAttempt();
+            a.setUser(u);
+            a.setExam(e);
+            a.setStartedAt(req.startedAt() != null ? req.startedAt() : java.time.Instant.now());
+            a.setStatus(TestAttempt.Status.SAVED);
+            a.setMode(parseMode(req.mode()));
+            a.setPassingScorePercent(e.getPassingScorePercent());
+            // Sequence + name: per-user across all exams. Assigned at first
+            // save so the user can identify the test in their reports.
+            int seq = attempts.findMaxSequenceForUser(u) + 1;
+            a.setSequenceNumber(seq);
+            a.setDisplayName(buildDisplayName(u, seq));
+        } else {
+            a = existing;
+        }
+        // finishedAt is repurposed as "last saved at" for SAVED rows so
+        // the existing-index-orderable queries still work.
+        a.setFinishedAt(java.time.Instant.now());
+        a.setDurationSeconds((int) Math.max(0,
+                java.time.Duration.between(a.getStartedAt(), a.getFinishedAt()).getSeconds()));
+        a.setTotalQuestions(req.totalQuestions());
+        // Score / passed are zeroed for SAVED rows — they get real
+        // numbers when the user finally clicks Finish.
+        a.setCorrectCount(0);
+        a.setIncorrectCount(0);
+        a.setUnansweredCount(req.totalQuestions());
+        a.setScorePercent(0);
+        a.setPassed(false);
+        if (req.questionIds() != null && !req.questionIds().isEmpty()) {
+            a.setQuestionIds(csvOfIds(req.questionIds()));
+        }
+        a.setSavedStateJson(req.savedStateJson());
+        attempts.save(a);
+        log.info("{} attempt user={} exam={} id={} name={}",
+                isNew ? "Saved new" : "Updated saved",
+                userEmail, e.getSlug(), a.getId(), a.getDisplayName());
+        return a;
+    }
+
+    /** Convert a SAVED attempt to FINISHED with the final scores. Mirrors
+     *  the body of {@link #record} but updates an existing row instead of
+     *  inserting. */
+    @Transactional
+    public TestAttempt finishSavedAttempt(String userEmail, Long savedId, RecordRequest req) {
+        if (userEmail == null) throw new IllegalArgumentException("Not signed in");
+        TestAttempt a = attempts.findById(savedId)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown saved test"));
+        User u = users.findByEmailIgnoreCase(userEmail)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown user"));
+        if (a.getUser() == null || !a.getUser().getId().equals(u.getId())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "This test belongs to another user.");
+        }
+        if (a.getStatus() == TestAttempt.Status.FINISHED) {
+            // Idempotent — finishing a finished attempt is a no-op.
+            return a;
+        }
+        int score = (int) Math.round(100.0 * req.correctCount() / Math.max(1, req.totalQuestions()));
+        int duration = (int) Math.max(0,
+                java.time.Duration.between(a.getStartedAt(), req.finishedAt() == null ? java.time.Instant.now() : req.finishedAt())
+                                  .getSeconds());
+        a.setStatus(TestAttempt.Status.FINISHED);
+        a.setFinishedAt(req.finishedAt() != null ? req.finishedAt() : java.time.Instant.now());
+        a.setDurationSeconds(duration);
+        a.setTotalQuestions(req.totalQuestions());
+        a.setCorrectCount(req.correctCount());
+        a.setIncorrectCount(req.incorrectCount());
+        a.setUnansweredCount(req.unansweredCount());
+        a.setScorePercent(score);
+        a.setPassed(score >= a.getPassingScorePercent());
+        a.setSavedStateJson(null); // no longer needed
+        if (req.mode() != null) a.setMode(parseMode(req.mode()));
+        if (req.questionIds() != null && !req.questionIds().isEmpty()) {
+            a.setQuestionIds(csvOfIds(req.questionIds()));
+        }
+        attempts.save(a);
+
+        // Wipe + re-persist per-question answers (replay drill-down).
+        for (TestAttemptAnswer prior : answerRepo.findByAttemptOrderByIdAsc(a)) {
+            answerRepo.delete(prior);
+        }
+        if (req.answers() != null) {
+            for (AnswerDetail d : req.answers()) {
+                if (d == null || d.questionId() == null) continue;
+                Question q = questions.findById(d.questionId()).orElse(null);
+                if (q == null) continue;
+                List<Long> picked = d.selectedChoiceIds() == null ? List.of() : d.selectedChoiceIds();
+                TestAttemptAnswer ans = new TestAttemptAnswer();
+                ans.setAttempt(a);
+                ans.setQuestion(q);
+                ans.setSelectedChoiceIds(picked.isEmpty()
+                        ? ""
+                        : picked.stream().map(String::valueOf).reduce((x, y) -> x + "," + y).orElse(""));
+                ans.setCorrect(scoreAnswer(q, picked));
+                answerRepo.save(ans);
+            }
+        }
+        log.info("Finished saved attempt id={} user={} exam={} score={}%",
+                a.getId(), userEmail, a.getExam().getSlug(), score);
+        return a;
+    }
+
+    /** GET path companion — load a saved attempt for resume. The client
+     *  uses {@link TestAttempt#getSavedStateJson()} to rehydrate answers
+     *  + active index, and the existing /retake-questions endpoint to
+     *  refetch the question set (saved question_ids are authoritative). */
+    @Transactional(readOnly = true)
+    public TestAttempt loadSavedForResume(String userEmail, Long savedId) {
+        TestAttempt a = attempts.findById(savedId)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown saved test"));
+        if (a.getUser() == null || !a.getUser().getEmail().equalsIgnoreCase(userEmail)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "This test belongs to another user.");
+        }
+        if (a.getStatus() != TestAttempt.Status.SAVED) {
+            throw new IllegalStateException("This attempt is already finished and can't be resumed.");
+        }
+        return a;
+    }
+
+    /** Hard delete of a saved attempt. Used by the Delete button on the
+     *  Saved-tests section so users can prune drafts. Finished attempts
+     *  are not deletable from this method. */
+    @Transactional
+    public void deleteSavedAttempt(String userEmail, Long savedId) {
+        TestAttempt a = attempts.findById(savedId).orElse(null);
+        if (a == null) return;
+        if (a.getUser() == null || !a.getUser().getEmail().equalsIgnoreCase(userEmail)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "This test belongs to another user.");
+        }
+        if (a.getStatus() != TestAttempt.Status.SAVED) {
+            throw new IllegalStateException("Only saved tests can be deleted from this page.");
+        }
+        for (TestAttemptAnswer ans : answerRepo.findByAttemptOrderByIdAsc(a)) {
+            answerRepo.delete(ans);
+        }
+        attempts.delete(a);
+    }
+
+    private TestAttempt.Mode parseMode(String mode) {
+        if (mode == null) return TestAttempt.Mode.PRACTICE;
+        try { return TestAttempt.Mode.valueOf(mode.trim().toUpperCase()); }
+        catch (IllegalArgumentException ignored) { return TestAttempt.Mode.PRACTICE; }
+    }
+
+    private String csvOfIds(List<Long> ids) {
+        StringBuilder sb = new StringBuilder();
+        for (Long id : ids) {
+            if (id == null) continue;
+            if (sb.length() > 0) sb.append(',');
+            sb.append(id);
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    /** Display name = "<first name> #<sequence>". Falls back to email-local
+     *  part if the user has no fullName. */
+    private String buildDisplayName(User u, int sequence) {
+        String first = "";
+        if (u.getFullName() != null && !u.getFullName().isBlank()) {
+            first = u.getFullName().trim().split("\\s+")[0];
+        }
+        if (first.isEmpty() && u.getEmail() != null) {
+            int at = u.getEmail().indexOf('@');
+            first = at > 0 ? u.getEmail().substring(0, at) : u.getEmail();
+        }
+        if (first.isEmpty()) first = "Test";
+        // Title-case the first letter for a cleaner label.
+        first = first.substring(0, 1).toUpperCase() + first.substring(1);
+        return first + " #" + sequence;
+    }
+
+    /** Save-request shape from the client. Mirrors RecordRequest but with
+     *  the optional in-progress savedStateJson and no score fields. */
+    public record SaveRequest(
+            String examSlug,
+            java.time.Instant startedAt,
+            int totalQuestions,
+            List<Long> questionIds,
+            String mode,
+            String savedStateJson
+    ) {}
 
     public record ExamSummary(
             String slug, String name, int passingScorePercent,

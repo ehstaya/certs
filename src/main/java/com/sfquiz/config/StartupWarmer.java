@@ -76,7 +76,9 @@ public class StartupWarmer {
                 // default-exam path. Plan caches by JPQL string, so even
                 // running it once with a user who has no rows warms the
                 // plan for everyone else.
-                attempts.findByUserAndExamOrderByFinishedAtAsc(sampleUser, sampleExam);
+                attempts.findByUserAndExamAndStatusOrderByFinishedAtAsc(
+                        sampleUser, sampleExam,
+                        com.sfquiz.entity.TestAttempt.Status.FINISHED);
                 // /my/reports dashboard's GROUP BY (per-exam summary for one user).
                 attempts.summaryByExamForUser(sampleUser);
                 // Topic-info panel + per-attempt breakdown read these on

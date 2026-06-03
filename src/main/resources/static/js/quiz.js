@@ -86,6 +86,73 @@
     try { localStorage.removeItem(practiceSaveKey()); } catch (e) {}
   }
 
+  /* Server-side save state — when set (after first save), every save call
+   *  updates the same TestAttempt row instead of creating a new one. Also
+   *  the value used to drive POST /finish vs POST /test-attempts on Finish. */
+  let savedAttemptId = null;
+  let savedAttemptName = null;
+  let savePending = false;
+
+  /** Sync the in-memory test state to the server as a SAVED TestAttempt.
+   *  Best-effort — failures fall back to localStorage only. Returns a
+   *  promise so callers can wait for it (e.g. before navigation away). */
+  async function saveAttemptToServer() {
+    if (testMode !== "practice") return null;
+    if (!examSlug) return null;
+    if (!state.questions || state.questions.length === 0) return null;
+    if (state.finished) return null;
+    if (savePending) return null;
+    savePending = true;
+    try {
+      const answers = [];
+      state.questions.forEach(function (q) {
+        const a = state.answers.get(q.id);
+        if (!a) return;
+        answers.push({
+          id: q.id,
+          selected: Array.from(a.selected),
+          submitted: !!a.submitted,
+          correct: !!a.correct,
+          correctChoiceIds: a.correctChoiceIds || [],
+          explanation: a.explanation || "",
+          helpUrl: a.helpUrl || "",
+          visited: !!a.visited,
+        });
+      });
+      const payload = {
+        id: savedAttemptId,
+        examSlug: examSlug,
+        startedAt: state.startedAt ? state.startedAt.toISOString() : null,
+        totalQuestions: state.questions.length,
+        questionIds: state.questions.map(function (q) { return q.id; }),
+        mode: testMode.toUpperCase(),
+        savedStateJson: JSON.stringify({
+          v: 1,
+          index: state.index,
+          answers: answers,
+        }),
+      };
+      const res = await fetch("/api/test-attempts/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 401) { showSessionExpiredOverlay(); return null; }
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && data.id) {
+        savedAttemptId = data.id;
+        savedAttemptName = data.displayName;
+      }
+      return data;
+    } catch (e) {
+      return null;
+    } finally {
+      savePending = false;
+    }
+  }
+
   function loadPracticeProgress() {
     if (testMode !== "practice") return null;
     if (!examSlug) return null;
@@ -216,14 +283,99 @@
     return Number.isFinite(n) && n > 0 ? n : null;
   }
 
+  /** ?resume=<savedAttemptId> — load a server-persisted SAVED test from
+   *  /my/reports/per-test's Resume button so the user picks up exactly
+   *  where they left off across sessions/devices. */
+  function getResumeAttemptId() {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("resume");
+    if (!s) return null;
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   async function init() {
     examSlug = getExamSlug();
     const retakeId = getRetakeAttemptId();
+    const resumeId = getResumeAttemptId();
     // Mode: "exam" enables strict simulation; anything else is practice.
     const modeParam = (new URLSearchParams(window.location.search).get("mode") || "").toLowerCase();
     testMode = modeParam === "exam" ? "exam" : "practice";
-    if (!examSlug && !retakeId) { window.location.href = "/exams.html"; return; }
+    if (!examSlug && !retakeId && !resumeId) { window.location.href = "/exams.html"; return; }
     await loadCurrentUser();
+
+    // Server-side resume — GET the saved snapshot, then load questions
+    // by id from the existing retake-questions endpoint (the server-saved
+    // questionIds are authoritative). On any error fall through to the
+    // normal random-sample flow so the user is never stuck.
+    if (resumeId) {
+      try {
+        const r = await fetch("/api/test-attempts/" + resumeId + "/saved-state",
+                              { credentials: "same-origin" });
+        if (r.status === 401) { window.location.href = "/login"; return; }
+        if (r.ok) {
+          const snap = await r.json();
+          if (snap && snap.examSlug) examSlug = snap.examSlug;
+          // Use the same /retake-questions endpoint to fetch the question
+          // payload — saved attempts have the same question-id CSV as
+          // retake-able rows do.
+          const qr = await fetch("/api/test-attempts/" + resumeId + "/retake-questions",
+                                 { credentials: "same-origin" });
+          if (qr.ok) {
+            const data = await qr.json();
+            const meta = data.exam || {};
+            practiceCount = meta.questionsPerSession && meta.questionsPerSession > 0 ? meta.questionsPerSession : 60;
+            TOTAL_MS = (meta.durationMinutes && meta.durationMinutes > 0 ? meta.durationMinutes : 90) * 60 * 1000;
+            PASSING_PCT = (meta.passingScorePercent && meta.passingScorePercent > 0) ? meta.passingScorePercent : 65;
+            applyExamBranding(meta);
+            state.questions = Array.isArray(data.questions) ? data.questions : [];
+            state.questions.forEach(function (q, i) { q.number = i + 1; });
+            state.questions.forEach(function (q) {
+              state.answers.set(q.id, { selected: new Set(), submitted: false, correct: false, visited: false });
+            });
+            // Rehydrate answers + active index from the saved snapshot.
+            let saved = null;
+            try { saved = JSON.parse(snap.savedStateJson || "null"); } catch (e) {}
+            if (saved && Array.isArray(saved.answers)) {
+              saved.answers.forEach(function (sa) {
+                const target = state.answers.get(sa.id);
+                if (!target) return;
+                target.selected = new Set(sa.selected || []);
+                target.submitted = !!sa.submitted;
+                target.correct = !!sa.correct;
+                target.correctChoiceIds = sa.correctChoiceIds || [];
+                target.explanation = sa.explanation || "";
+                target.helpUrl = sa.helpUrl || "";
+                target.visited = !!sa.visited;
+              });
+            }
+            state.index = saved && Number.isFinite(saved.index)
+              ? Math.min(Math.max(0, saved.index), state.questions.length - 1)
+              : 0;
+            state.startedAt = new Date();
+            state.lastRecordedFinishAt = null;
+            savedAttemptId = snap.id;
+            savedAttemptName = snap.displayName || ("#" + snap.id);
+            practiceResumed = true;
+            initSidebarWidth();
+            renderSidebar();
+            renderQuestion();
+            bindActions();
+            initResizer();
+            initTimer();
+            applyExamModeUiLockdown(); // no-op in practice
+            showPracticeResumedBanner(null);
+            document.body.classList.remove("quiz-booting");
+            return;
+          }
+        } else if (r.status === 410) {
+          // Already finished — redirect to its report row instead.
+          window.location.href = "/my/reports/per-test"
+            + (examSlug ? "?exam=" + encodeURIComponent(examSlug) : "");
+          return;
+        }
+      } catch (e) { /* fall through to normal flow */ }
+    }
 
     // Practice-mode resume: if a saved in-progress practice exists for
     // this exam (and the user didn't explicitly request a retake), pick
@@ -508,6 +660,10 @@
     if (state.finished) return;
     if (!state.questions || state.questions.length === 0) return;
     savePracticeProgress();
+    // Best-effort server save so a closed tab + new session can resume
+    // via the per-test page's Resume button. Local save is still the
+    // primary path; this just elevates it to a server-known SAVED row.
+    saveAttemptToServer();
     showIdleSavedOverlay();
   }
 
@@ -572,6 +728,11 @@
     if (sessionExpiredShown) return;
     sessionExpiredShown = true;
     savePracticeProgress();
+    // Try a server-side save too — the cookie may still be valid for
+    // the same session that just hit 401 on a different endpoint, and
+    // even if not, the request fails silently. This is what makes the
+    // session-timeout-becomes-a-saved-test promise work end-to-end.
+    saveAttemptToServer();
     const overlay = document.createElement("div");
     overlay.id = "sessionExpiredOverlay";
     overlay.setAttribute("role", "dialog");
@@ -732,6 +893,12 @@
     $("#backBtn").addEventListener("click", () => goTo(state.index - 1));
     $("#nextBtn").addEventListener("click", onNextClicked);
     $("#finishBtn").addEventListener("click", onFinish);
+    const saveExitBtn = document.getElementById("saveExitBtn");
+    if (saveExitBtn) {
+      // Hide Save & exit in exam mode — strict-sim doesn't allow pausing.
+      if (isExamMode()) saveExitBtn.style.display = "none";
+      saveExitBtn.addEventListener("click", onSaveAndExit);
+    }
     $("#backToTestBtn").addEventListener("click", hideResultsPanel);
     // Exam-mode-only: explicit exit point on the results screen. Released
     // the nav lock + bounces the user to their attempt history.
@@ -1374,6 +1541,29 @@
   /** Passing-score threshold — set from exam metadata at init time. */
   let PASSING_PCT = 65;
 
+  /** Save the practice test on the server and bounce to My reports.
+   *  The user can resume from the Saved-tests section there. Idle save
+   *  + session-expired follow the same path. */
+  async function onSaveAndExit() {
+    if (testMode !== "practice") return;
+    if (state.finished) return;
+    if (!state.questions || state.questions.length === 0) return;
+    const btn = document.getElementById("saveExitBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+    // Local save first so even if the server save fails we have a
+    // localStorage fallback for in-tab resume.
+    savePracticeProgress();
+    const result = await saveAttemptToServer();
+    const slug = examSlug ? "?exam=" + encodeURIComponent(examSlug) : "";
+    // If the save succeeded we know the saved test's display name —
+    // pass it via a flash query param so the per-test page can show
+    // a confirmation.
+    const flash = result && result.displayName
+      ? "&savedName=" + encodeURIComponent(result.displayName)
+      : "";
+    window.location.href = "/my/reports/per-test" + slug + flash;
+  }
+
   function onFinish() {
     // If results are already showing (test is finished), the button is greyed
     // out — but guard anyway so a keyboard / programmatic click can't fire it.
@@ -1569,7 +1759,14 @@
       });
     });
 
-    return authFetch("/api/test-attempts", {
+    // If we have a SAVED attempt id (the user resumed from /my/reports
+    // or auto-saved earlier in this session), finalize that row in
+    // place — converts SAVED -> FINISHED keeping its sequence number +
+    // display name. Otherwise insert a fresh FINISHED row.
+    const url = savedAttemptId
+      ? "/api/test-attempts/" + savedAttemptId + "/finish"
+      : "/api/test-attempts";
+    return authFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -1581,8 +1778,6 @@
         correctCount: correctCount,
         incorrectCount: incorrect,
         unansweredCount: unanswered,
-        // Snapshot of the exact set + order served this session, so the
-        // user can retake this same test later via /index.html?retake=<id>.
         questionIds: state.questions.map(function (q) { return q.id; }),
         mode: testMode.toUpperCase(),
         answers: answers,

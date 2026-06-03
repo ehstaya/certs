@@ -127,6 +127,12 @@ public class UserReportsController {
                 ? new TestAttemptService.AttemptTopicBreakdown(List.of(), null, List.of(), 0, 0)
                 : attempts.topicBreakdownForAttempt(latestAttempt);
         model.addAttribute("topicBreakdown", topicBreakdown);
+        // Saved tests in progress on this exam — rendered as a separate
+        // section above the finished history so the user can resume or
+        // delete them. Most-recently-saved first.
+        List<TestAttempt> savedTests = (exam == null) ? List.of()
+                : attempts.savedForUserAndExam(email, exam);
+        model.addAttribute("savedTests", savedTests);
         model.addAttribute("exams", exams);
         // Per-exam aggregate for the header cards.
         int avg = 0, best = 0, passedCount = 0;

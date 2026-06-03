@@ -86,6 +86,40 @@ public class TestAttempt {
     @org.hibernate.annotations.ColumnDefault("'PRACTICE'")
     private Mode mode = Mode.PRACTICE;
 
+    /** Lifecycle of an attempt:
+     *    SAVED    — work in progress. User saved via Save & exit, session
+     *               timeout, or idle auto-save. Can be resumed via the
+     *               Resume button on /my/reports/per-test; can be reset/
+     *               retaken from the saved snapshot any number of times.
+     *    FINISHED — scored. Shows up in the dashboard cards. Cannot be
+     *               resumed or retaken — a "retake" starts a fresh attempt
+     *               from the original question set (see retake-questions).
+     *  Legacy rows predate this field; the column default backfills them
+     *  to FINISHED so the dashboard treats every historical row as scored. */
+    public enum Status { SAVED, FINISHED }
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 16, nullable = false)
+    @org.hibernate.annotations.ColumnDefault("'FINISHED'")
+    private Status status = Status.FINISHED;
+
+    /** Human-friendly identifier, e.g. "Tariq #3". Assigned at save/finish
+     *  time so users can tell their attempts apart on the reports page. */
+    @Column(name = "display_name", length = 80)
+    private String displayName;
+
+    /** 1-based per-user sequence. Tariq's first attempt across all exams
+     *  is #1, second is #2, etc. Used to build {@link #displayName}. */
+    @Column(name = "sequence_number")
+    private Integer sequenceNumber;
+
+    /** For SAVED rows only: the in-progress snapshot the client needs to
+     *  resume exactly where they left off (answer map keyed by question
+     *  id + active question index, JSON-encoded). Cleared on transition
+     *  to FINISHED. */
+    @Column(name = "saved_state_json", columnDefinition = "TEXT")
+    private String savedStateJson;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public User getUser() { return user; }
@@ -116,4 +150,12 @@ public class TestAttempt {
     public void setQuestionIds(String questionIds) { this.questionIds = questionIds; }
     public Mode getMode() { return mode; }
     public void setMode(Mode mode) { this.mode = mode == null ? Mode.PRACTICE : mode; }
+    public Status getStatus() { return status; }
+    public void setStatus(Status status) { this.status = status == null ? Status.FINISHED : status; }
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public Integer getSequenceNumber() { return sequenceNumber; }
+    public void setSequenceNumber(Integer sequenceNumber) { this.sequenceNumber = sequenceNumber; }
+    public String getSavedStateJson() { return savedStateJson; }
+    public void setSavedStateJson(String savedStateJson) { this.savedStateJson = savedStateJson; }
 }

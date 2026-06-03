@@ -139,4 +139,102 @@ public class QuizController {
             java.util.List<Long> selectedChoiceIds,
             boolean correct
     ) {}
+
+    /** Save a practice test in progress so the user can resume later.
+     *  Optional {@code id} body field — if present we update that SAVED
+     *  row (keeping its sequence number + display name); if absent we
+     *  create a new one. Returns the persisted attempt so the client
+     *  can stash the assigned id for subsequent saves. */
+    @PostMapping("/test-attempts/save")
+    public ResponseEntity<SaveAttemptResponse> saveAttempt(@RequestBody SaveAttemptRequest req,
+                                                           Authentication auth) {
+        if (auth == null || auth.getName() == null) return ResponseEntity.status(401).build();
+        java.time.Instant started = req.startedAt() == null ? null : Instant.parse(req.startedAt());
+        TestAttemptService.SaveRequest svc = new TestAttemptService.SaveRequest(
+                req.examSlug(), started, req.totalQuestions(),
+                req.questionIds() == null ? java.util.List.of() : req.questionIds(),
+                req.mode(), req.savedStateJson());
+        com.sfquiz.entity.TestAttempt saved = attempts.saveAttempt(auth.getName(), req.id(), svc);
+        return ResponseEntity.ok(new SaveAttemptResponse(
+                saved.getId(),
+                saved.getDisplayName() == null ? "" : saved.getDisplayName(),
+                saved.getSequenceNumber() == null ? 0 : saved.getSequenceNumber()));
+    }
+
+    /** Finalize a SAVED test — converts it to FINISHED with the actual
+     *  score + per-question answer detail. Mirrors {@link #recordAttempt}
+     *  but updates the existing row rather than inserting a new one. */
+    @PostMapping("/test-attempts/{id}/finish")
+    public ResponseEntity<Void> finishSavedAttempt(@PathVariable Long id,
+                                                   @RequestBody AttemptRequest req,
+                                                   Authentication auth) {
+        if (auth == null || auth.getName() == null) return ResponseEntity.status(401).build();
+        Instant started  = req.startedAt() == null ? null : Instant.parse(req.startedAt());
+        Instant finished = req.finishedAt() == null ? null : Instant.parse(req.finishedAt());
+        java.util.List<TestAttemptService.AnswerDetail> answers = new java.util.ArrayList<>();
+        if (req.answers() != null) {
+            for (AttemptAnswerRequest a : req.answers()) {
+                if (a == null || a.questionId() == null) continue;
+                answers.add(new TestAttemptService.AnswerDetail(
+                        a.questionId(),
+                        a.selectedChoiceIds() == null ? java.util.List.of() : a.selectedChoiceIds(),
+                        a.correct()));
+            }
+        }
+        attempts.finishSavedAttempt(auth.getName(), id, new TestAttemptService.RecordRequest(
+                req.examSlug(), started, finished,
+                req.totalQuestions(), req.correctCount(),
+                req.incorrectCount(), req.unansweredCount(),
+                req.questionIds() == null ? java.util.List.of() : req.questionIds(),
+                req.mode(),
+                answers));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Load a saved test's snapshot for client-side resume. Returns the
+     *  examSlug, questionIds, opaque savedStateJson the client wrote on
+     *  the last save, and the assigned displayName. */
+    @GetMapping("/test-attempts/{id}/saved-state")
+    public ResponseEntity<SavedStateResponse> savedState(@PathVariable Long id, Authentication auth) {
+        if (auth == null || auth.getName() == null) return ResponseEntity.status(401).build();
+        com.sfquiz.entity.TestAttempt a;
+        try {
+            a = attempts.loadSavedForResume(auth.getName(), id);
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(410).build();   // attempt is finished
+        } catch (org.springframework.security.access.AccessDeniedException ex) {
+            return ResponseEntity.status(403).build();
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(404).build();
+        }
+        return ResponseEntity.ok(new SavedStateResponse(
+                a.getId(),
+                a.getExam() == null ? "" : a.getExam().getSlug(),
+                a.getDisplayName() == null ? "" : a.getDisplayName(),
+                a.getSavedStateJson(),
+                a.getQuestionIds()));
+    }
+
+    /** Delete a SAVED attempt — for the Saved-tests list's Delete button. */
+    @PostMapping("/test-attempts/{id}/delete-saved")
+    public ResponseEntity<Void> deleteSaved(@PathVariable Long id, Authentication auth) {
+        if (auth == null || auth.getName() == null) return ResponseEntity.status(401).build();
+        attempts.deleteSavedAttempt(auth.getName(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    public record SaveAttemptRequest(
+            Long id,                     // null on first save, set on subsequent saves
+            String examSlug,
+            String startedAt,
+            int totalQuestions,
+            java.util.List<Long> questionIds,
+            String mode,
+            String savedStateJson
+    ) {}
+    public record SaveAttemptResponse(Long id, String displayName, int sequenceNumber) {}
+    public record SavedStateResponse(
+            Long id, String examSlug, String displayName,
+            String savedStateJson, String questionIds
+    ) {}
 }
