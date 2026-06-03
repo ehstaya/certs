@@ -76,9 +76,15 @@ public class UserReportsController {
     public String perTest(Authentication auth,
                           @RequestParam(name = "exam", required = false) String exam,
                           @RequestParam(name = "mode", required = false) String modeFilter,
+                          @RequestParam(name = "tab", required = false) String tab,
                           @RequestParam(name = "savedPage", defaultValue = "0") int savedPage,
                           @RequestParam(name = "finishedPage", defaultValue = "0") int finishedPage,
                           Model model) {
+        // ?tab=saved -> Saved-tests sub-view. Anything else (including
+        // null / "finished") -> the rich Finished-tests sub-view (scores,
+        // area breakdown, history).
+        String activeTab = ("saved".equalsIgnoreCase(tab)) ? "saved" : "finished";
+        model.addAttribute("activeTab", activeTab);
         String email = currentEmail(auth);
         List<ExamDto> exams = examService.listActive();
         if (exam == null || exam.isBlank()) {

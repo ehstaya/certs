@@ -75,9 +75,44 @@
       </label>
     </form>
 
+    <!-- Sub-tabs: Finished vs Saved. Keep the per-test page as one
+         URL but split the body so users land on the rich finished view
+         by default and can flip to a leaner Saved-tests pane. -->
+    <nav class="pertest-tabs" aria-label="Per-test sections"
+         style="display:flex; gap:0; border-bottom:1px solid var(--gray-200,#e5e7eb); margin: 8px 0 18px;">
+      <a th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, tab='finished', finishedPage=${finishedPage})}"
+         th:classappend="${activeTab == 'finished'} ? 'tab-active' : ''"
+         style="padding: 10px 16px; text-decoration:none; color:var(--gray-700,#374151); font-weight:600; font-size:14px; border-bottom:2px solid transparent;">
+        ✅ Finished tests
+        <span class="muted" style="font-weight:400;"
+              th:if="${finishedTotalElements != null}"
+              th:text="|(${finishedTotalElements})|">(0)</span>
+      </a>
+      <a th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, tab='saved', savedPage=${savedPage})}"
+         th:classappend="${activeTab == 'saved'} ? 'tab-active' : ''"
+         style="padding: 10px 16px; text-decoration:none; color:var(--gray-700,#374151); font-weight:600; font-size:14px; border-bottom:2px solid transparent;">
+        💾 Saved tests
+        <span class="muted" style="font-weight:400;"
+              th:if="${savedTotalElements != null}"
+              th:text="|(${savedTotalElements})|">(0)</span>
+      </a>
+    </nav>
+    <style>
+      .pertest-tabs a.tab-active {
+        color: var(--brand-navy, #032D60) !important;
+        border-bottom-color: var(--brand-primary, #0176D3) !important;
+      }
+    </style>
+
     <!-- Latest attempt hero — first thing the user sees after Finish so
          the "what did I just score" answer is immediate. Hidden when
          there are no attempts on this exam yet. -->
+    <!-- =====================================================================
+         FINISHED-tests sub-view (default). Wraps the latest-attempt hero,
+         area breakdown, aggregates, and history table.
+         ===================================================================== -->
+    <div th:if="${activeTab == 'finished'}">
+
     <section th:if="${latestAttempt != null}"
              style="margin: 4px 0 22px; padding: 18px 22px; border-radius: 10px; border: 1px solid var(--gray-200, #e5e7eb); background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%); box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 18px rgba(15,23,42,.05);">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom: 10px;">
@@ -136,62 +171,9 @@
       </div>
     </section>
 
-    <!-- =================================================================
-         Saved tests in progress on this exam. Resume picks up exactly
-         where the user left off. Delete prunes a draft they don't want.
-         ================================================================= -->
-    <section th:if="${savedTests != null and not #lists.isEmpty(savedTests)}"
-             style="margin: 18px 0 24px; padding: 16px 18px; background:#fff8db; border:1px solid #fbd56b; border-radius:10px;">
-      <h2 style="margin: 0 0 4px; font-size: 16px; color: #7a5a00;">
-        Saved tests
-        <span class="muted" style="font-size: 12px; font-weight: 400;"
-              th:text="|(${savedTotalElements}) — pick up where you left off|">(0)</span>
-      </h2>
-      <table class="admin-table" style="margin-top: 10px;">
-        <thead><tr><th>Name</th><th>Mode</th><th>Last saved</th><th>Progress</th><th>Actions</th></tr></thead>
-        <tbody>
-          <tr th:each="s : ${savedTests}">
-            <td><strong th:text="${s.displayName != null ? s.displayName : ('#' + s.id)}">Name #1</strong></td>
-            <td>
-              <span th:if="${s.mode != null and s.mode.name() == 'EXAM'}" class="pct-pill bad">REAL EXAM</span>
-              <span th:unless="${s.mode != null and s.mode.name() == 'EXAM'}" class="pct-pill mid">PRACTICE</span>
-            </td>
-            <td th:text="${#temporals.format(s.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
-            <td>
-              <span th:text="${s.totalQuestions}">0</span> question(s) in the set
-            </td>
-            <td>
-              <a class="btn btn-primary btn-sm" th:href="@{|/?resume=${s.id}|}"
-                 title="Resume this test from the exact question you left off on.">↪ Resume</a>
-              <a class="btn btn-secondary btn-sm" th:href="@{|/?resume=${s.id}&restart=1|}"
-                 data-confirm-title="Retake from start"
-                 th:attr="data-confirm=|Retake '${s.displayName}' from the beginning? Same questions in the same order, but your in-progress answers will be cleared and you'll go back to question 1.|"
-                 data-confirm-ok="Retake from start"
-                 title="Same question set, but start over from question 1 with no answers.">↻ Retake from start</a>
-              <form th:action="@{|/api/test-attempts/${s.id}/delete-saved|}" method="post" style="display:inline">
-                <button class="btn btn-danger btn-sm" type="submit"
-                        data-confirm-title="Delete saved test"
-                        th:attr="data-confirm=|Permanently delete the saved test '${s.displayName}'? Your in-progress answers will be lost — this can't be undone.|"
-                        data-confirm-ok="Delete">🗑 Delete</button>
-              </form>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <!-- Saved-tests pager — hidden when the result fits on one page. -->
-      <nav th:if="${savedTotalPages != null and savedTotalPages > 1}"
-           style="display:flex; align-items:center; gap:10px; margin-top: 10px; font-size: 13px;"
-           aria-label="Saved tests pagination">
-        <a class="btn btn-sm btn-secondary"
-           th:classappend="${savedPage <= 0} ? 'is-locked' : ''"
-           th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, savedPage=${savedPage - 1}, finishedPage=${finishedPage})}">‹ Prev</a>
-        <span class="muted"
-              th:text="|Page ${savedPage + 1} of ${savedTotalPages}|">Page 1 of 1</span>
-        <a class="btn btn-sm btn-secondary"
-           th:classappend="${savedPage + 1 >= savedTotalPages} ? 'is-locked' : ''"
-           th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, savedPage=${savedPage + 1}, finishedPage=${finishedPage})}">Next ›</a>
-      </nav>
-    </section>
+    <!-- Saved tests now live in their own sub-view at the bottom of
+         this template, gated on activeTab == 'saved'. -->
+
 
     <!-- Performance by area — shows which cert objectives the user
          crushed and which ones to drill into next. Only renders when
@@ -362,13 +344,76 @@
          aria-label="Finished tests pagination">
       <a class="btn btn-sm btn-secondary"
          th:classappend="${finishedPage <= 0} ? 'is-locked' : ''"
-         th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, savedPage=${savedPage}, finishedPage=${finishedPage - 1})}">‹ Prev</a>
+         th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, tab='finished', savedPage=${savedPage}, finishedPage=${finishedPage - 1})}">‹ Prev</a>
       <span class="muted"
             th:text="|Page ${finishedPage + 1} of ${finishedTotalPages}|">Page 1 of 1</span>
       <a class="btn btn-sm btn-secondary"
          th:classappend="${finishedPage + 1 >= finishedTotalPages} ? 'is-locked' : ''"
-         th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, savedPage=${savedPage}, finishedPage=${finishedPage + 1})}">Next ›</a>
+         th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, tab='finished', savedPage=${savedPage}, finishedPage=${finishedPage + 1})}">Next ›</a>
     </nav>
+
+    </div><!-- /FINISHED sub-view -->
+
+    <!-- =====================================================================
+         SAVED-tests sub-view. Limited information — no scores, no
+         correct/incorrect counts (we never scored these). Each row gives
+         the user a way to Resume, Retake from start, or Delete.
+         ===================================================================== -->
+    <div th:if="${activeTab == 'saved'}">
+      <p class="muted" style="font-size: 13px;">
+        These are practice tests you saved mid-flight (or were auto-saved
+        when your session expired). They aren't scored yet — resume to
+        finish them, retake from the start to redo the same question set,
+        or delete to drop a draft you no longer need.
+      </p>
+      <div class="empty" th:if="${#lists.isEmpty(savedTests)}"
+           style="margin-top: 12px;">No saved tests on this exam.</div>
+      <table class="admin-table" th:unless="${#lists.isEmpty(savedTests)}"
+             style="margin-top: 12px;">
+        <thead><tr><th>Name</th><th>Mode</th><th>Last saved</th><th>Questions in set</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr th:each="s : ${savedTests}">
+            <td>
+              <strong th:text="${s.displayName != null and not #strings.isEmpty(s.displayName) ? s.displayName : ('#' + s.id)}">Name #1</strong>
+            </td>
+            <td>
+              <span th:if="${s.mode != null and s.mode.name() == 'EXAM'}" class="pct-pill bad">REAL EXAM</span>
+              <span th:unless="${s.mode != null and s.mode.name() == 'EXAM'}" class="pct-pill mid">PRACTICE</span>
+            </td>
+            <td th:text="${#temporals.format(s.finishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+            <td th:text="${s.totalQuestions}">0</td>
+            <td>
+              <a class="btn btn-primary btn-sm" th:href="@{|/?resume=${s.id}|}"
+                 title="Resume this test from the exact question you left off on.">↪ Resume</a>
+              <a class="btn btn-secondary btn-sm" th:href="@{|/?resume=${s.id}&restart=1|}"
+                 data-confirm-title="Retake from start"
+                 th:attr="data-confirm=|Retake '${s.displayName}' from the beginning? Same questions in the same order, but your in-progress answers will be cleared and you'll go back to question 1.|"
+                 data-confirm-ok="Retake from start"
+                 title="Same question set, but start over from question 1 with no answers.">↻ Retake from start</a>
+              <form th:action="@{|/api/test-attempts/${s.id}/delete-saved|}" method="post" style="display:inline">
+                <button class="btn btn-danger btn-sm" type="submit"
+                        data-confirm-title="Delete saved test"
+                        th:attr="data-confirm=|Permanently delete the saved test '${s.displayName}'? Your in-progress answers will be lost — this can't be undone.|"
+                        data-confirm-ok="Delete">🗑 Delete</button>
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <!-- Saved-tests pager — hidden when the result fits on one page. -->
+      <nav th:if="${savedTotalPages != null and savedTotalPages > 1}"
+           style="display:flex; align-items:center; gap:10px; margin-top: 10px; font-size: 13px;"
+           aria-label="Saved tests pagination">
+        <a class="btn btn-sm btn-secondary"
+           th:classappend="${savedPage <= 0} ? 'is-locked' : ''"
+           th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, tab='saved', savedPage=${savedPage - 1}, finishedPage=${finishedPage})}">‹ Prev</a>
+        <span class="muted"
+              th:text="|Page ${savedPage + 1} of ${savedTotalPages}|">Page 1 of 1</span>
+        <a class="btn btn-sm btn-secondary"
+           th:classappend="${savedPage + 1 >= savedTotalPages} ? 'is-locked' : ''"
+           th:href="@{/my/reports/per-test(exam=${exam}, mode=${modeFilter}, tab='saved', savedPage=${savedPage + 1}, finishedPage=${finishedPage})}">Next ›</a>
+      </nav>
+    </div><!-- /SAVED sub-view -->
   </main>
 </div>
 </body>
