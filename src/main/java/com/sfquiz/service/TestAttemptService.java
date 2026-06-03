@@ -307,9 +307,9 @@ public class TestAttemptService {
         attempts.save(a);
 
         // Wipe + re-persist per-question answers (replay drill-down).
-        for (TestAttemptAnswer prior : answerRepo.findByAttemptOrderByIdAsc(a)) {
-            answerRepo.delete(prior);
-        }
+        // Bulk delete avoids the N+1 of loading 60 entities just to remove
+        // them — one statement instead of 60 round trips.
+        answerRepo.deleteAllByAttempt(a);
         if (req.answers() != null) {
             for (AnswerDetail d : req.answers()) {
                 if (d == null || d.questionId() == null) continue;
@@ -363,9 +363,10 @@ public class TestAttemptService {
         if (a.getStatus() != TestAttempt.Status.SAVED) {
             throw new IllegalStateException("Only saved tests can be deleted from this page.");
         }
-        for (TestAttemptAnswer ans : answerRepo.findByAttemptOrderByIdAsc(a)) {
-            answerRepo.delete(ans);
-        }
+        // Bulk delete of answer rows (none expected for a typical saved
+        // attempt since saves don't persist per-question answers, but
+        // the explicit wipe keeps the schema invariant: no orphan rows).
+        answerRepo.deleteAllByAttempt(a);
         attempts.delete(a);
     }
 

@@ -11,7 +11,13 @@ import java.time.Instant;
 @Table(name = "test_attempts",
        indexes = {
            @Index(name = "idx_attempt_user", columnList = "user_id"),
-           @Index(name = "idx_attempt_user_exam", columnList = "user_id,exam_id")
+           @Index(name = "idx_attempt_user_exam", columnList = "user_id,exam_id"),
+           // Covers the new findByUserAndStatusOrderByFinishedAtDesc
+           // (dashboard's recent-finished list + saved-tests fetch).
+           @Index(name = "idx_attempt_user_status", columnList = "user_id,status"),
+           // Covers per-test page's per-exam saved + finished queries.
+           @Index(name = "idx_attempt_user_exam_status",
+                  columnList = "user_id,exam_id,status")
        })
 public class TestAttempt {
 
