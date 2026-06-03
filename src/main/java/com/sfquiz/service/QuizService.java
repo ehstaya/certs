@@ -65,7 +65,13 @@ public class QuizService {
     /** Load Questions for the given IDs, preferring cached QuestionDtos
      *  where possible. The output order matches {@code ids} exactly.
      *  Cache misses fall back to a single findAllById call on the remainder
-     *  and populate the cache for the next launch. */
+     *  and populate BOTH the dto cache and the submit-lookup cache for
+     *  next time.
+     *
+     *  A dto cache hit but submit cache miss (TTLs slightly out of sync
+     *  or someone evicted just one) counts as a miss so we reload from
+     *  DB and keep both caches in lockstep. Otherwise the user would hit
+     *  the slow path on submit even though the launch was fast. */
     private List<QuestionDto> loadQuestionDtosOrdered(List<Long> ids, Map<String, String> nameMap) {
         org.springframework.cache.Cache cache =
                 cacheManager.getCache(com.sfquiz.config.CacheConfig.QUESTION_DTO);
@@ -74,8 +80,11 @@ public class QuizService {
         if (cache != null) {
             for (Long id : ids) {
                 org.springframework.cache.Cache.ValueWrapper w = cache.get(id);
-                if (w != null) byId.put(id, (QuestionDto) w.get());
-                else misses.add(id);
+                if (w != null && submitLookup.isCached(id)) {
+                    byId.put(id, (QuestionDto) w.get());
+                } else {
+                    misses.add(id);
+                }
             }
         } else {
             misses.addAll(ids);

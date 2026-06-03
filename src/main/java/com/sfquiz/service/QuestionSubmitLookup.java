@@ -75,4 +75,16 @@ public class QuestionSubmitLookup {
                 .toList();
         cache.put(q.getId(), new SubmitView(correctIds, q.getExplanation(), q.getHelpUrl()));
     }
+
+    /** True if a SubmitView is currently cached for this question id.
+     *  Used by the launch path to detect when the QuestionDto cache hit
+     *  but the matching submit-cache entry has expired — in which case
+     *  the launch should reload the entity to refresh both caches in
+     *  lockstep. */
+    public boolean isCached(Long questionId) {
+        if (questionId == null) return false;
+        Cache cache = cacheManager.getCache(com.sfquiz.config.CacheConfig.SUBMIT_LOOKUP);
+        if (cache == null) return false;
+        return cache.get(questionId) != null;
+    }
 }
