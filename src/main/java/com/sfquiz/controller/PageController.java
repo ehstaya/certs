@@ -16,15 +16,17 @@ public class PageController {
 
     @GetMapping("/")
     public void root(@RequestParam(name = "retake", required = false) String retake,
+                     @RequestParam(name = "resume", required = false) String resume,
+                     @RequestParam(name = "restart", required = false) String restart,
                      @RequestParam(name = "exam", required = false) String exam,
                      @RequestParam(name = "mode", required = false) String mode,
                      HttpServletResponse response) throws IOException {
-        // If the URL carries a retake or exam param, the caller wants to
-        // launch the quiz directly — forward to index.html with the same
-        // query string instead of bouncing them through the exam picker.
-        // 'mode' (practice|exam) rides along so an exam-mode retake or
-        // launch keeps its lock-down UI; without forwarding it, the
-        // /index.html landing falls back to the default practice mode.
+        // If the URL carries retake / resume / exam, forward straight to
+        // the quiz with the same query string — bypass the exam picker
+        // and the topic-info splash so a click on Resume on the per-test
+        // page lands directly in the test.
+        // mode (practice|exam) rides along so an exam-mode launch keeps
+        // its lock-down UI.
         String modeQs = (mode != null && !mode.isBlank())
                 ? "&mode=" + java.net.URLEncoder.encode(mode.trim(),
                         java.nio.charset.StandardCharsets.UTF_8)
@@ -33,6 +35,17 @@ public class PageController {
             response.sendRedirect("/index.html?retake=" +
                     java.net.URLEncoder.encode(retake.trim(),
                             java.nio.charset.StandardCharsets.UTF_8) + modeQs);
+            return;
+        }
+        if (resume != null && !resume.isBlank()) {
+            // restart=1 means "Retake from start" — same question set,
+            // cleared answers. Pass it through so quiz.js init can skip
+            // the answer-rehydration step.
+            String restartQs = ("1".equals(restart) || "true".equalsIgnoreCase(restart))
+                    ? "&restart=1" : "";
+            response.sendRedirect("/index.html?resume=" +
+                    java.net.URLEncoder.encode(resume.trim(),
+                            java.nio.charset.StandardCharsets.UTF_8) + restartQs + modeQs);
             return;
         }
         if (exam != null && !exam.isBlank()) {
