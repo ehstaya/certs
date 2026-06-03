@@ -3,6 +3,8 @@ package com.sfquiz.service;
 import com.sfquiz.entity.Choice;
 import com.sfquiz.entity.Question;
 import com.sfquiz.repository.QuestionRepository;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -27,9 +29,11 @@ import java.util.List;
 public class QuestionSubmitLookup {
 
     private final QuestionRepository repo;
+    private final CacheManager cacheManager;
 
-    public QuestionSubmitLookup(QuestionRepository repo) {
+    public QuestionSubmitLookup(QuestionRepository repo, CacheManager cacheManager) {
         this.repo = repo;
+        this.cacheManager = cacheManager;
     }
 
     public record SubmitView(
@@ -54,5 +58,21 @@ public class QuestionSubmitLookup {
     @CacheEvict(value = com.sfquiz.config.CacheConfig.SUBMIT_LOOKUP, key = "#questionId")
     public void evict(Long questionId) {
         // body intentionally empty — the annotation does the work
+    }
+
+    /** Pre-warm the cache directly from an already-loaded Question entity
+     *  (no DB round-trip). Called from QuizService.listForExam +
+     *  listForRetake at quiz launch so every submit during the test is a
+     *  cache hit — the user never pays for a stale-pool stall mid-question
+     *  even after they idle the page for several minutes. */
+    public void preload(Question q) {
+        if (q == null || q.getId() == null) return;
+        Cache cache = cacheManager.getCache(com.sfquiz.config.CacheConfig.SUBMIT_LOOKUP);
+        if (cache == null) return;
+        List<Long> correctIds = q.getChoices().stream()
+                .filter(Choice::isCorrect)
+                .map(Choice::getId)
+                .toList();
+        cache.put(q.getId(), new SubmitView(correctIds, q.getExplanation(), q.getHelpUrl()));
     }
 }

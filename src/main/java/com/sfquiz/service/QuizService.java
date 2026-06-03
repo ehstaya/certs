@@ -68,6 +68,9 @@ public class QuizService {
             if (q == null) continue;
             if (q.getStatus() != Question.Status.APPROVED) continue;
             ordered.add(q);
+            // Pre-warm the submit cache so every answer during the
+            // retake is served from memory even if the pool stalls.
+            submitLookup.preload(q);
         }
         Map<String, String> nameMap = randomizer.buildSessionNameMap();
         return ordered.stream()
@@ -105,6 +108,10 @@ public class QuizService {
         // the 60 sampled IDs. JpaRepository.findAllById issues a single
         // IN-list SELECT.
         List<Question> sampled = repo.findAllById(selectedIds);
+        // Pre-warm the submit cache — every question the user will
+        // answer this session is now in memory, so even a Postgres
+        // blip mid-test doesn't break the submit path.
+        for (Question q : sampled) submitLookup.preload(q);
         // findAllById doesn't preserve input order — re-shuffle so topics
         // aren't clustered (was the original "Final shuffle" step).
         Collections.shuffle(sampled);
