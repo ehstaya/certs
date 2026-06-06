@@ -67,13 +67,19 @@
         });
       });
       const payload = {
-        v: 1,
+        v: 2,
         examSlug: examSlug,
         startedAt: state.startedAt ? state.startedAt.toISOString() : null,
         savedAt: new Date().toISOString(),
         index: state.index,
         questions: state.questions, // full payload so resume works offline
         answers: answers,
+        timer: {
+          state: "paused",
+          remainingMs: timer && Number.isFinite(timer.remainingMs)
+            ? Math.max(0, timer.remainingMs)
+            : null,
+        },
       };
       localStorage.setItem(practiceSaveKey(), JSON.stringify(payload));
     } catch (e) {
@@ -127,9 +133,20 @@
         questionIds: state.questions.map(function (q) { return q.id; }),
         mode: testMode.toUpperCase(),
         savedStateJson: JSON.stringify({
-          v: 1,
+          // v2 adds the timer snapshot so the clock picks up where it
+          // left off when the user resumes — even across sessions or
+          // devices. We always save it as paused with the remaining
+          // time at save moment; the resume handler decides whether to
+          // auto-start it.
+          v: 2,
           index: state.index,
           answers: answers,
+          timer: {
+            state: "paused",
+            remainingMs: timer && Number.isFinite(timer.remainingMs)
+              ? Math.max(0, timer.remainingMs)
+              : null,
+          },
         }),
       };
       const res = await fetch("/api/test-attempts/save", {
@@ -369,6 +386,31 @@
             savedAttemptId = snap.id;
             savedAttemptName = snap.displayName || ("#" + snap.id);
             practiceResumed = true;
+            // Preserve the timer across the resume. If the saved snapshot
+            // carries a remainingMs (v2+), pre-write it to the timer-state
+            // localStorage key BEFORE initTimer() runs so initTimer sees
+            // it as a paused timer with the right remaining time and just
+            // starts ticking from there. On a Retake-from-start the user
+            // wants a fresh clock — skip the override.
+            try {
+              const u = state.user;
+              const email = (u && u.email) ? u.email : "anon";
+              const timerKey = "sfquiz:timer:" + (examSlug || "default") + ":" + email;
+              if (!restart && saved && saved.timer
+                  && Number.isFinite(saved.timer.remainingMs) && saved.timer.remainingMs > 0) {
+                localStorage.setItem(timerKey, JSON.stringify({
+                  storageKey: timerKey,
+                  state: "running",                       // initTimer arms a fresh countdown
+                  remainingMs: saved.timer.remainingMs,
+                  endTime: Date.now() + saved.timer.remainingMs,
+                }));
+              } else {
+                // No saved timer (legacy v1 snapshot, restart=1, or
+                // expired) — wipe so initTimer starts fresh from the
+                // exam's full duration.
+                localStorage.removeItem(timerKey);
+              }
+            } catch (e) { /* private mode — initTimer falls back to fresh anyway */ }
             initSidebarWidth();
             renderSidebar();
             renderQuestion();
@@ -401,14 +443,26 @@
         // Re-fetch exam metadata only — we need durationMinutes, passingScorePercent,
         // and branding. Cheap one-shot GET, no harm if it fails (we fall back to defaults).
         await hydrateExamMetaForResume();
-        // Timer doesn't survive a logout / long absence: clear any
-        // stale countdown for this exam+user so initTimer starts fresh
-        // at the full duration. Per user feedback: keep the answers,
-        // reset the clock. Key construction mirrors initTimer().
+        // Restore the saved timer if the snapshot has one (v2+); fall
+        // back to a fresh clock for legacy v1 payloads or when the
+        // saved time was already exhausted. Key construction mirrors
+        // initTimer() so the resume picks up the value we write here.
         try {
           const u = state.user;
           const email = (u && u.email) ? u.email : "anon";
-          localStorage.removeItem("sfquiz:timer:" + (examSlug || "default") + ":" + email);
+          const timerKey = "sfquiz:timer:" + (examSlug || "default") + ":" + email;
+          if (savedProgress.timer
+              && Number.isFinite(savedProgress.timer.remainingMs)
+              && savedProgress.timer.remainingMs > 0) {
+            localStorage.setItem(timerKey, JSON.stringify({
+              storageKey: timerKey,
+              state: "running",
+              remainingMs: savedProgress.timer.remainingMs,
+              endTime: Date.now() + savedProgress.timer.remainingMs,
+            }));
+          } else {
+            localStorage.removeItem(timerKey);
+          }
         } catch (e) { /* private mode — initTimer falls back to fresh anyway */ }
         state.questions = savedProgress.questions;
         state.questions.forEach((q) => state.answers.set(q.id, { selected: new Set(), submitted: false, correct: false, visited: false }));
@@ -671,6 +725,13 @@
     if (testMode !== "practice") return;
     if (state.finished) return;
     if (!state.questions || state.questions.length === 0) return;
+    // Pause the test timer BEFORE we save so the snapshot (both local
+    // and server) captures the actual remaining time. Otherwise the
+    // timer keeps counting down behind the overlay and the user comes
+    // back to a smaller clock than when they paused.
+    if (timer && timer.state === "running") {
+      pauseTimer();
+    }
     savePracticeProgress();
     // Best-effort server save so a closed tab + new session can resume
     // via the per-test page's Resume button. Local save is still the
@@ -712,6 +773,12 @@
     const overlay = document.getElementById("idleSavedOverlay");
     if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
     idleOverlayShown = false;
+    // Resume the countdown from where we paused. Skip when the test
+    // was already finished (e.g. user finished elsewhere) or the
+    // remaining time is gone.
+    if (timer && timer.state === "paused" && timer.remainingMs > 0 && !state.finished) {
+      startTimer();
+    }
     resetIdleTimer();
   }
 
